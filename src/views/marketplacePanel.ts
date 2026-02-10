@@ -2,6 +2,12 @@ import * as vscode from 'vscode';
 import { MarketplaceSource, RemoteSkill } from '../models/skill';
 import { MarketplaceService } from '../services/marketplaceService';
 
+/** Messages sent from the extension host to the marketplace webview */
+interface WebviewMessage {
+  command: string;
+  [key: string]: unknown;
+}
+
 // ------------------------------------------------------------------
 // Localised strings helper
 // ------------------------------------------------------------------
@@ -278,8 +284,7 @@ export class MarketplacePanel {
   // Helpers
   // ------------------------------------------------------------------
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _postMessage(msg: any): void {
+  private _postMessage(msg: WebviewMessage): void {
     if (!this._disposed) {
       this._panel.webview.postMessage(msg);
     }

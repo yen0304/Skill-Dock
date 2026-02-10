@@ -16,6 +16,17 @@ interface CacheEntry<T> {
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+/** A single item in the GitHub Git Trees API response */
+interface GitTreeItem {
+  path: string;
+  type: string;
+}
+
+/** Top-level shape of the GitHub Git Trees API response */
+interface GitTreeResponse {
+  tree?: GitTreeItem[];
+}
+
 /**
  * Service for browsing and installing skills from remote GitHub repos.
  */
@@ -169,16 +180,15 @@ export class MarketplaceService {
   /** Fetch the recursive tree listing for a repo. Returns flat file paths. */
   private async _fetchTree(source: MarketplaceSource): Promise<string[]> {
     const url = `https://api.github.com/repos/${source.owner}/${source.repo}/git/trees/${source.branch}?recursive=1`;
-    const json = await this._httpGetJson(url);
+    const json = await this._httpGetJson(url) as GitTreeResponse;
 
     if (!json.tree || !Array.isArray(json.tree)) {
       return [];
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return json.tree
-      .filter((item: any) => item.type === 'blob')
-      .map((item: any) => item.path as string);
+      .filter((item) => item.type === 'blob')
+      .map((item) => item.path);
   }
 
   /** Fetch raw content of a SKILL.md and return a RemoteSkill. */
@@ -241,8 +251,7 @@ export class MarketplaceService {
   // ------------------------------------------------------------------
 
   /** Perform an HTTPS GET and return parsed JSON. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _httpGetJson(url: string): Promise<any> {
+  private _httpGetJson(url: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const req = https.get(url, { headers: { 'User-Agent': 'SkillDock-VSCode', Accept: 'application/json' } }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
