@@ -97,6 +97,7 @@ export const window = {
   showErrorMessage: vi.fn(),
   showInputBox: vi.fn(),
   showQuickPick: vi.fn(),
+  showTextDocument: vi.fn(),
   createTreeView: vi.fn(() => ({ dispose: vi.fn() })),
 };
 

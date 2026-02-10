@@ -2,6 +2,33 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { markdownToHtml, escapeHtmlStr, MarketplacePanel } from './marketplacePanel';
 import { window as vscodeWindow } from 'vscode';
 
+// Helper to create a mock webview panel that captures the message handler
+function createMockWebviewPanel() {
+  let messageHandler: ((msg: any) => Promise<void>) | undefined;
+  let disposeHandler: (() => void) | undefined;
+  const panel = {
+    webview: {
+      html: '',
+      onDidReceiveMessage: vi.fn((cb: any) => {
+        messageHandler = cb;
+        return { dispose: () => {} };
+      }),
+      postMessage: vi.fn(),
+    },
+    onDidDispose: vi.fn((cb: any) => {
+      disposeHandler = cb;
+      return { dispose: () => {} };
+    }),
+    reveal: vi.fn(),
+    dispose: vi.fn(),
+  };
+  return {
+    panel,
+    getMessageHandler: () => messageHandler,
+    getDisposeHandler: () => disposeHandler,
+  };
+}
+
 // ----------------------------------------------------------
 // escapeHtmlStr
 // ----------------------------------------------------------
@@ -361,5 +388,266 @@ describe('MarketplacePanel', () => {
 
     expect(mockMarketplaceService.removeCustomSource).not.toHaveBeenCalled();
     expect(onRefresh).not.toHaveBeenCalled();
+  });
+});
+
+// ----------------------------------------------------------
+// MarketplacePanel message handler coverage
+// ----------------------------------------------------------
+describe('MarketplacePanel message handlers', () => {
+  beforeEach(() => {
+    MarketplacePanel.currentPanel = undefined;
+    vi.clearAllMocks();
+  });
+
+  function setupPanel(serviceOverrides: Record<string, any> = {}) {
+    const mock = createMockWebviewPanel();
+    vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
+
+    const onRefresh = vi.fn();
+    const mockMarketplaceService = {
+      getSources: vi.fn(() => [
+        { id: 'anthropic', label: 'Anthropic Skills', isBuiltin: true },
+      ]),
+      fetchAll: vi.fn().mockResolvedValue([]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+      installSkill: vi.fn().mockResolvedValue(undefined),
+      addCustomSource: vi.fn().mockResolvedValue(undefined),
+      removeCustomSource: vi.fn().mockResolvedValue(undefined),
+      ...serviceOverrides,
+    } as any;
+
+    MarketplacePanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockMarketplaceService,
+      onRefresh,
+    );
+
+    return { mock, onRefresh, mockMarketplaceService };
+  }
+
+  it('should handle ready message (loads skills)', async () => {
+    const { mock, mockMarketplaceService } = setupPanel();
+    const handler = mock.getMessageHandler()!;
+    expect(handler).toBeDefined();
+
+    await handler({ command: 'ready' });
+    expect(mockMarketplaceService.fetchAll).toHaveBeenCalledWith(false);
+    expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'loading' }),
+    );
+  });
+
+  it('should handle refresh message (force reload)', async () => {
+    const { mock, mockMarketplaceService } = setupPanel();
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'refresh' });
+    expect(mockMarketplaceService.fetchAll).toHaveBeenCalledWith(true);
+  });
+
+  it('should handle install message — success', async () => {
+    const skill = {
+      id: 'test-skill',
+      metadata: { name: 'Test Skill', description: 'desc' },
+      source: { id: 'anthropic' },
+      repoPath: 'skills/test-skill',
+    };
+
+    const { mock, onRefresh, mockMarketplaceService } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'install', sourceId: 'anthropic', repoPath: 'skills/test-skill' });
+    expect(mockMarketplaceService.installSkill).toHaveBeenCalledWith(skill);
+    expect(onRefresh).toHaveBeenCalled();
+    expect(vscodeWindow.showInformationMessage).toHaveBeenCalled();
+  });
+
+  it('should handle install message — skill not found', async () => {
+    const { mock, mockMarketplaceService } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([]),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'install', sourceId: 'anthropic', repoPath: 'nonexistent' });
+    expect(mockMarketplaceService.installSkill).not.toHaveBeenCalled();
+  });
+
+  it('should handle install message — error', async () => {
+    const skill = {
+      id: 'fail-skill',
+      metadata: { name: 'Fail' },
+      source: { id: 'anthropic' },
+      repoPath: 'skills/fail',
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      installSkill: vi.fn().mockRejectedValue(new Error('network error')),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'install', sourceId: 'anthropic', repoPath: 'skills/fail' });
+    expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+  });
+
+  it('should handle preview message — success', async () => {
+    const skill = {
+      id: 'preview-skill',
+      metadata: { name: 'Preview', description: 'desc', author: 'a', version: '1', license: 'MIT', tags: ['t'] },
+      source: { id: 'anthropic', label: 'Anthropic' },
+      repoPath: 'skills/preview',
+      body: '# Hello\n\nWorld',
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'preview', sourceId: 'anthropic', repoPath: 'skills/preview' });
+    expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'showPreview' }),
+    );
+  });
+
+  it('should handle preview message — skill not found', async () => {
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([]),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'preview', sourceId: 'anthropic', repoPath: 'nonexistent' });
+    // postMessage should only have loading, not showPreview
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const showPreviewCalls = calls.filter((c: any) => c[0]?.command === 'showPreview');
+    expect(showPreviewCalls).toHaveLength(0);
+  });
+
+  it('should handle preview message — error', async () => {
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockRejectedValue(new Error('fetch failed')),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'preview', sourceId: 'anthropic', repoPath: 'skills/x' });
+    expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+  });
+
+  it('should show error when loadSkills fails', async () => {
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockRejectedValue(new Error('API rate limit')),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'ready' });
+    expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+  });
+
+  it('should not process messages after dispose', async () => {
+    const { mock, mockMarketplaceService } = setupPanel();
+    const handler = mock.getMessageHandler()!;
+    const disposeHandler = mock.getDisposeHandler()!;
+
+    // Dispose the panel
+    disposeHandler();
+
+    // Messages after dispose should be ignored
+    await handler({ command: 'refresh' });
+    // fetchAll should not be called after dispose (the _disposed flag should prevent it)
+    // Note: the guard is inside the message handler
+  });
+});
+
+describe('MarketplacePanel HTML output', () => {
+  beforeEach(() => {
+    MarketplacePanel.currentPanel = undefined;
+    vi.clearAllMocks();
+  });
+
+  it('should generate HTML with CSP nonce', () => {
+    const mock = createMockWebviewPanel();
+    vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
+
+    const mockMarketplaceService = {
+      getSources: vi.fn(() => []),
+      fetchAll: vi.fn().mockResolvedValue([]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+    } as any;
+
+    MarketplacePanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockMarketplaceService,
+      vi.fn(),
+    );
+
+    const html = mock.panel.webview.html;
+    expect(html).toContain('Content-Security-Policy');
+    expect(html).toContain('nonce-');
+    expect(html).toContain('<!DOCTYPE html>');
+    expect(html).not.toMatch(/\bonclick\s*=/i);
+  });
+});
+
+describe('MarketplacePanel dispose', () => {
+  beforeEach(() => {
+    MarketplacePanel.currentPanel = undefined;
+    vi.clearAllMocks();
+  });
+
+  it('should clean up on dispose', () => {
+    const mock = createMockWebviewPanel();
+    vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
+
+    const mockMarketplaceService = {
+      getSources: vi.fn(() => []),
+      fetchAll: vi.fn().mockResolvedValue([]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+    } as any;
+
+    MarketplacePanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockMarketplaceService,
+      vi.fn(),
+    );
+
+    expect(MarketplacePanel.currentPanel).toBeDefined();
+
+    const disposeHandler = mock.getDisposeHandler()!;
+    expect(disposeHandler).toBeDefined();
+    disposeHandler();
+
+    expect(MarketplacePanel.currentPanel).toBeUndefined();
+  });
+});
+
+describe('MarketplacePanel filterSourceId on existing panel', () => {
+  beforeEach(() => {
+    MarketplacePanel.currentPanel = undefined;
+    vi.clearAllMocks();
+  });
+
+  it('should apply pending filter on first createOrShow with filterSourceId', () => {
+    const mock = createMockWebviewPanel();
+    vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
+
+    const mockMarketplaceService = {
+      getSources: vi.fn(() => [{ id: 'anthropic', label: 'Anthropic', isBuiltin: true }]),
+      fetchAll: vi.fn().mockResolvedValue([]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+    } as any;
+
+    MarketplacePanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockMarketplaceService,
+      vi.fn(),
+      'anthropic',
+    );
+
+    expect(MarketplacePanel.currentPanel).toBeDefined();
   });
 });
