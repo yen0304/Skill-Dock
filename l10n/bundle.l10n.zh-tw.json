@@ -102,5 +102,13 @@
   "Back": "返回",
   "Loading content...": "載入內容中...",
   "Select All": "全選",
-  "Deselect All": "取消全選"
+  "Deselect All": "取消全選",
+  "GitHub API rate limit exceeded. Set a personal access token in Settings → skilldock.githubToken to increase the limit.": "GitHub API 速率限制已超過。請在設定 → skilldock.githubToken 中設定個人存取權杖以提高限制。",
+  "Install Selected ({0})": "安裝已選（{0}）",
+  "Installing skills...": "正在安裝 Skills...",
+  "Installed {0} skill(s) to your library.": "已安裝 {0} 個 Skill 到管理庫。",
+  "Name (A-Z)": "名稱（A-Z）",
+  "Last Modified (Newest)": "最後修改（最新）",
+  "Author (A-Z)": "作者（A-Z）",
+  "Select sort order": "選擇排序方式"
 }

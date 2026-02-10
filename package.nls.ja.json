@@ -28,9 +28,12 @@
   "command.openMarketplaceSource": "マーケットプレイスでソースを閲覧",
   "command.addMarketplaceSource": "マーケットプレイスソースを追加",
   "command.removeMarketplaceSource": "マーケットプレイスソースを削除",
+  "command.sortLibrary": "ライブラリを並べ替え",
 
   "config.libraryPath.description": "スキルライブラリのカスタムパス。デフォルトは ~/.skilldock/skills",
   "config.defaultTarget.description": "スキルをリポジトリにインポートする際のデフォルトターゲット形式",
   "config.showRepoSkills.description": "サイドバーにリポジトリスキルパネルを表示する",
-  "config.marketplaceSources.description": "マーケットプレイスでエージェントスキルをスキャンする追加のGitHubリポジトリURL"
+  "config.marketplaceSources.description": "マーケットプレイスでエージェントスキルをスキャンする追加のGitHubリポジトリURL",
+  "config.githubToken.description": "GitHub個人アクセストークン。APIリクエストのレート制限を60回/時から5,000回/時に増加します。",
+  "config.librarySortBy.description": "スキルライブラリツリービューの並べ替え順（name、lastModified、author）"
 }

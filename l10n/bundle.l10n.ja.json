@@ -102,5 +102,13 @@
   "Back": "戻る",
   "Loading content...": "コンテンツを読み込み中...",
   "Select All": "すべて選択",
-  "Deselect All": "すべて解除"
+  "Deselect All": "すべて解除",
+  "GitHub API rate limit exceeded. Set a personal access token in Settings → skilldock.githubToken to increase the limit.": "GitHub APIのレート制限を超過しました。設定 → skilldock.githubToken で個人アクセストークンを設定して制限を引き上げてください。",
+  "Install Selected ({0})": "選択をインストール（{0}）",
+  "Installing skills...": "スキルをインストール中...",
+  "Installed {0} skill(s) to your library.": "{0}個のスキルをライブラリにインストールしました。",
+  "Name (A-Z)": "名前（A-Z）",
+  "Last Modified (Newest)": "最終更新（最新）",
+  "Author (A-Z)": "作成者（A-Z）",
+  "Select sort order": "並べ替え順を選択"
 }

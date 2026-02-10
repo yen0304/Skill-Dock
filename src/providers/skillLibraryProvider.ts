@@ -163,6 +163,20 @@ export class SkillLibraryProvider implements vscode.TreeDataProvider<SkillTreeIt
       this._skills = [];
     }
 
+    // Apply sort order from settings
+    const sortBy = vscode.workspace.getConfiguration('skilldock').get<string>('librarySortBy', 'name');
+    this._skills.sort((a, b) => {
+      switch (sortBy) {
+        case 'lastModified':
+          return b.lastModified - a.lastModified;
+        case 'author':
+          return (a.metadata.author ?? '').localeCompare(b.metadata.author ?? '')
+            || a.metadata.name.localeCompare(b.metadata.name);
+        default: // 'name'
+          return a.metadata.name.localeCompare(b.metadata.name);
+      }
+    });
+
     return this._skills.map(skill => new SkillTreeItem(skill, 'library'));
   }
 }

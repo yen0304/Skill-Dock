@@ -851,7 +851,7 @@ export class MarketplacePanel {
       // Delegated event binding
       skillList.querySelectorAll('.skill-item').forEach(function(item) {
         item.addEventListener('click', function(e) {
-          // Don't trigger preview when clicking action buttons
+          // Don't trigger preview when clicking action buttons or checkboxes
           if (e.target.closest('.skill-actions')) return;
           var sourceId = item.getAttribute('data-source-id');
           var repoPath = item.getAttribute('data-repo-path');
@@ -871,6 +871,7 @@ export class MarketplacePanel {
           }
         });
       });
+
     }
 
     function showDetail(skill) {

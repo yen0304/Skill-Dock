@@ -284,6 +284,29 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Sort library
+  context.subscriptions.push(
+    vscode.commands.registerCommand('skilldock.sortLibrary', async () => {
+      const current = vscode.workspace.getConfiguration('skilldock').get<string>('librarySortBy', 'name');
+      const items = [
+        { label: vscode.l10n.t('Name (A-Z)'), value: 'name' },
+        { label: vscode.l10n.t('Last Modified (Newest)'), value: 'lastModified' },
+        { label: vscode.l10n.t('Author (A-Z)'), value: 'author' },
+      ].map((i) => ({ ...i, description: i.value === current ? '✓' : '' }));
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: vscode.l10n.t('Select sort order'),
+      });
+
+      if (selected) {
+        await vscode.workspace.getConfiguration('skilldock').update(
+          'librarySortBy', selected.value, vscode.ConfigurationTarget.Global,
+        );
+        libraryProvider.refresh();
+      }
+    })
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand('skilldock.refreshRepoSkills', () => {
       repoSkillsProvider.refresh();
