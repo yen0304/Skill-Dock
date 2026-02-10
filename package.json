@@ -13,6 +13,7 @@
     "url": "https://github.com/yen0304/Skill-Dock/issues"
   },
   "homepage": "https://github.com/yen0304/Skill-Dock#readme",
+  "icon": "media/icons/skilldock-256.png",
   "engines": {
     "vscode": "^1.85.0"
   },
