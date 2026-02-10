@@ -22,27 +22,23 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: "npm"
-          cache-dependency-path: skilldock-vscode/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
-        working-directory: skilldock-vscode
 
       - name: Lint
         run: npm run lint
-        working-directory: skilldock-vscode
 
       - name: Compile
         run: npm run compile
-        working-directory: skilldock-vscode
 
       - name: Package
         run: npx @vscode/vsce package --allow-missing-repository
-        working-directory: skilldock-vscode
 
       - name: Upload VSIX
         if: matrix.node-version == 20
         uses: actions/upload-artifact@v4
         with:
           name: skill-dock-vsix
-          path: skilldock-vscode/*.vsix
+          path: "*.vsix"
