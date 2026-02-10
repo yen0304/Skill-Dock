@@ -115,6 +115,29 @@ export const workspace = {
 };
 
 export const commands = {
-  registerCommand: vi.fn(),
+  registerCommand: vi.fn((_id: string, _cb: (...args: unknown[]) => unknown) => ({ dispose: () => {} })),
   executeCommand: vi.fn(),
 };
+
+export enum ConfigurationTarget {
+  Global = 1,
+  Workspace = 2,
+  WorkspaceFolder = 3,
+}
+
+export class DataTransferItem {
+  constructor(public value: unknown) {}
+  asString(): Thenable<string> {
+    return Promise.resolve(typeof this.value === 'string' ? this.value : JSON.stringify(this.value));
+  }
+}
+
+export class DataTransfer {
+  private _map = new Map<string, DataTransferItem>();
+  get(mimeType: string): DataTransferItem | undefined {
+    return this._map.get(mimeType);
+  }
+  set(mimeType: string, item: DataTransferItem): void {
+    this._map.set(mimeType, item);
+  }
+}

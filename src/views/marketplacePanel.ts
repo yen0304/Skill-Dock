@@ -247,6 +247,7 @@ export class MarketplacePanel {
 
     try {
       await this.marketplaceService.addCustomSource(url);
+      this.onRefresh();
       vscode.window.showInformationMessage(
         vscode.l10n.t('Source added: {0}', url)
       );
@@ -266,6 +267,7 @@ export class MarketplacePanel {
 
     try {
       await this.marketplaceService.removeCustomSource(sourceId);
+      this.onRefresh();
       await this._loadSkills(true);
     } catch (err) {
       vscode.window.showErrorMessage(String(err));
@@ -664,12 +666,24 @@ export class MarketplacePanel {
           emptyState.style.display = 'none';
           break;
         case 'updateSkills':
+          var prevSourceIds = new Set(allSources.map(function(s) { return s.id; }));
           allSkills = msg.skills;
           allSources = msg.sources;
           installedSet = new Set(msg.skills.filter(function(s) { return s.installed; }).map(function(s) { return s.id; }));
-          // On first load, activate all sources
-          if (activeSourceIds.size === 0) {
+          // Sync activeSourceIds: auto-activate new sources, prune removed ones
+          var newSourceIds = new Set(allSources.map(function(s) { return s.id; }));
+          if (activeSourceIds.size === 0 && prevSourceIds.size === 0) {
+            // First load — activate all
             allSources.forEach(function(s) { activeSourceIds.add(s.id); });
+          } else {
+            // Activate any newly added sources
+            allSources.forEach(function(s) {
+              if (!prevSourceIds.has(s.id)) { activeSourceIds.add(s.id); }
+            });
+            // Remove stale source IDs
+            activeSourceIds.forEach(function(id) {
+              if (!newSourceIds.has(id)) { activeSourceIds.delete(id); }
+            });
           }
           renderSourceFilters();
           renderSourceBar();
@@ -940,11 +954,11 @@ function getNonce(): string {
 // ------------------------------------------------------------------
 // Minimal Markdown → HTML converter (runs on extension side)
 // ------------------------------------------------------------------
-function escapeHtmlStr(str: string): string {
+export function escapeHtmlStr(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function markdownToHtml(md: string): string {
+export function markdownToHtml(md: string): string {
   let html = escapeHtmlStr(md);
 
   // Fenced code blocks: ```lang\n...\n```

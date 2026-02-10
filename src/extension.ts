@@ -353,6 +353,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (!url) { return; }
       try {
         await marketplaceService.addCustomSource(url);
+        refreshAll();
         vscode.window.showInformationMessage(
           vscode.l10n.t('Source added: {0}', url)
         );

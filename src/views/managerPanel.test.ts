@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { window as vscodeWindow } from 'vscode';
+import { ManagerPanel } from './managerPanel';
 
 /**
  * Tests for the ManagerPanel webview behavior.
@@ -33,5 +35,70 @@ describe('ManagerPanel HTML generation (CSP)', () => {
     `;
 
     expect(inlineHandlerPattern.test(fixedSkillListHtml)).toBe(false);
+  });
+});
+
+describe('ManagerPanel instantiation', () => {
+  beforeEach(() => {
+    ManagerPanel.currentPanel = undefined;
+    vi.clearAllMocks();
+  });
+
+  it('should create panel via createOrShow', () => {
+    const mockStorageService = {
+      listSkills: vi.fn().mockResolvedValue([]),
+      searchSkills: vi.fn().mockResolvedValue([]),
+      onDidChange: vi.fn(() => ({ dispose: () => {} })),
+      readSkill: vi.fn().mockResolvedValue(null),
+      deleteSkill: vi.fn().mockResolvedValue(undefined),
+      libraryPath: '/tmp/library',
+    } as any;
+
+    const mockImportService = {
+      importToRepo: vi.fn(),
+      pickTargetFormat: vi.fn(),
+    } as any;
+
+    ManagerPanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockStorageService,
+      mockImportService,
+      vi.fn(),
+    );
+
+    expect(vscodeWindow.createWebviewPanel).toHaveBeenCalledWith(
+      'skilldockManager',
+      expect.any(String),
+      expect.any(Number),
+      expect.objectContaining({ enableScripts: true }),
+    );
+    expect(ManagerPanel.currentPanel).toBeDefined();
+  });
+
+  it('should reveal existing panel on second createOrShow', () => {
+    const mockStorageService = {
+      listSkills: vi.fn().mockResolvedValue([]),
+      onDidChange: vi.fn(() => ({ dispose: () => {} })),
+    } as any;
+
+    const mockImportService = {} as any;
+
+    ManagerPanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockStorageService,
+      mockImportService,
+      vi.fn(),
+    );
+
+    const first = ManagerPanel.currentPanel;
+
+    ManagerPanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockStorageService,
+      mockImportService,
+      vi.fn(),
+    );
+
+    expect(ManagerPanel.currentPanel).toBe(first);
   });
 });

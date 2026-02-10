@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
  * Tests for the SkillEditorPanel webview behavior.
@@ -191,5 +191,101 @@ describe('SkillEditorPanel dispose', () => {
     fixedDispose(); // second call should be no-op
 
     expect(disposeFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =====================================================
+// Panel instantiation tests for coverage
+// =====================================================
+
+import { SkillEditorPanel } from './skillEditorPanel';
+import { window as vscodeWindow } from 'vscode';
+
+describe('SkillEditorPanel instantiation', () => {
+  beforeEach(() => {
+    SkillEditorPanel.currentPanels.clear();
+    vi.clearAllMocks();
+  });
+
+  it('should create panel for new skill', () => {
+    const mockStorageService = {
+      createSkill: vi.fn().mockResolvedValue(undefined),
+      updateSkill: vi.fn().mockResolvedValue(undefined),
+      onDidChange: vi.fn(() => ({ dispose: () => {} })),
+    } as any;
+
+    SkillEditorPanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockStorageService,
+      null,
+      true,
+      vi.fn(),
+    );
+
+    expect(vscodeWindow.createWebviewPanel).toHaveBeenCalledWith(
+      'skilldockEditor',
+      expect.any(String),
+      expect.anything(),
+      expect.objectContaining({ enableScripts: true }),
+    );
+    expect(SkillEditorPanel.currentPanels.size).toBe(1);
+  });
+
+  it('should create panel for editing existing skill', () => {
+    const mockStorageService = {
+      updateSkill: vi.fn().mockResolvedValue(undefined),
+      onDidChange: vi.fn(() => ({ dispose: () => {} })),
+    } as any;
+
+    const skill = {
+      id: 'edit-me',
+      metadata: {
+        name: 'Edit Me',
+        description: 'A skill to edit',
+        author: 'Tester',
+        version: '2.0',
+        license: 'MIT',
+        compatibility: 'claude',
+        tags: ['test', 'edit'],
+      },
+      body: '# Edit Me\n\nThis has a </script> tag that should be escaped',
+      dirPath: '/tmp/edit-me',
+      filePath: '/tmp/edit-me/SKILL.md',
+      lastModified: Date.now(),
+    };
+
+    SkillEditorPanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockStorageService,
+      skill,
+      false,
+      vi.fn(),
+    );
+
+    expect(SkillEditorPanel.currentPanels.has('edit-me')).toBe(true);
+  });
+
+  it('should reveal existing panel on second call', () => {
+    const mockStorageService = {
+      createSkill: vi.fn(),
+      onDidChange: vi.fn(() => ({ dispose: () => {} })),
+    } as any;
+
+    SkillEditorPanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockStorageService,
+      null,
+      true,
+    );
+
+    SkillEditorPanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockStorageService,
+      null,
+      true,
+    );
+
+    // Should only create one panel
+    expect(SkillEditorPanel.currentPanels.size).toBe(1);
   });
 });

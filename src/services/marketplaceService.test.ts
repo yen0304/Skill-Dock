@@ -226,6 +226,143 @@ describe('MarketplaceService', () => {
   });
 
   // ----------------------------------------------------------
+  // installSkill
+  // ----------------------------------------------------------
+  describe('installSkill', () => {
+    it('should install a new skill to library', async () => {
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'remote-skill',
+        metadata: { name: 'Remote Skill', description: 'From remote', author: 'Author', version: '1.0', tags: ['remote'] },
+        body: '# Remote Skill\n\nContent here',
+        repoPath: 'skills/remote-skill/SKILL.md',
+        downloadUrl: 'https://raw.githubusercontent.com/...',
+      };
+
+      await service.installSkill(remote);
+
+      // Verify skill was created
+      const skill = await storageService.readSkill('remote-skill');
+      expect(skill).not.toBeNull();
+      expect(skill!.metadata.name).toBe('Remote Skill');
+    });
+
+    it('should overwrite existing skill when user confirms', async () => {
+      // Create skill first
+      const skillDir = path.join(tmpDir, 'existing-skill');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        '---\nname: Existing Skill\ndescription: Old\n---\nOld body'
+      );
+
+      const vscodeModule = await import('vscode');
+      vi.mocked(vscodeModule.window.showWarningMessage).mockResolvedValue('Overwrite' as any);
+
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'existing-skill',
+        metadata: { name: 'Updated Skill', description: 'New desc' },
+        body: '# Updated\nNew content',
+        repoPath: 'skills/existing-skill/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      await service.installSkill(remote);
+
+      const skill = await storageService.readSkill('existing-skill');
+      expect(skill!.metadata.name).toBe('Updated Skill');
+    });
+
+    it('should not overwrite when user cancels', async () => {
+      const skillDir = path.join(tmpDir, 'keep-skill');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        '---\nname: Keep Skill\ndescription: Keep\n---\nKeep body'
+      );
+
+      const vscodeModule = await import('vscode');
+      vi.mocked(vscodeModule.window.showWarningMessage).mockResolvedValue('Cancel' as any);
+
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'keep-skill',
+        metadata: { name: 'Changed', description: 'Change' },
+        body: '# Changed',
+        repoPath: 'skills/keep-skill/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      await service.installSkill(remote);
+
+      const skill = await storageService.readSkill('keep-skill');
+      expect(skill!.metadata.name).toBe('Keep Skill');
+    });
+
+    it('should install skill without optional fields', async () => {
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'minimal-remote',
+        metadata: { name: 'Minimal', description: 'Basic' },
+        body: 'Body only',
+        repoPath: 'skills/minimal-remote/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      await service.installSkill(remote);
+      const skill = await storageService.readSkill('minimal-remote');
+      expect(skill).not.toBeNull();
+    });
+
+    it('should install skill with license field', async () => {
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'licensed-skill',
+        metadata: { name: 'Licensed', description: 'Has license', license: 'MIT' },
+        body: 'Licensed body',
+        repoPath: 'skills/licensed-skill/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      await service.installSkill(remote);
+      const skill = await storageService.readSkill('licensed-skill');
+      expect(skill).not.toBeNull();
+    });
+  });
+
+  // ----------------------------------------------------------
+  // Cache behavior
+  // ----------------------------------------------------------
+  describe('cache', () => {
+    it('clearCache should clear all cached entries', () => {
+      // Access private cache for testing
+      (service as any)._cache.set('test-key', { data: [], timestamp: Date.now() });
+      expect((service as any)._cache.size).toBe(1);
+
+      service.clearCache();
+      expect((service as any)._cache.size).toBe(0);
+    });
+  });
+
+  // ----------------------------------------------------------
+  // getCustomSourceUrls
+  // ----------------------------------------------------------
+  describe('getCustomSourceUrls', () => {
+    it('should return custom URLs from config', () => {
+      mockMarketplaceSources = ['https://github.com/org/repo'];
+      const urls = service.getCustomSourceUrls();
+      expect(urls).toEqual(['https://github.com/org/repo']);
+    });
+
+    it('should return empty array when no custom sources', () => {
+      mockMarketplaceSources = [];
+      const urls = service.getCustomSourceUrls();
+      expect(urls).toEqual([]);
+    });
+  });
+
+  // ----------------------------------------------------------
   // Builtin sources validation
   // ----------------------------------------------------------
   describe('BUILTIN_MARKETPLACE_SOURCES', () => {
