@@ -142,7 +142,6 @@ export class MarketplaceService {
 
   /** Install a remote skill to the local library. */
   async installSkill(remote: RemoteSkill): Promise<void> {
-    const content = this._rebuildSkillMd(remote);
     const existing = await this.storageService.readSkill(remote.id);
     if (existing) {
       const ans = await vscode.window.showWarningMessage(
@@ -158,7 +157,7 @@ export class MarketplaceService {
       }
       await this.storageService.updateSkill(remote.id, remote.metadata, remote.body);
     } else {
-      await this.storageService.createSkill(remote.id, remote.metadata, content);
+      await this.storageService.createSkill(remote.id, remote.metadata, remote.body);
     }
   }
 
@@ -226,40 +225,42 @@ export class MarketplaceService {
     };
   }
 
-  /** Rebuild the full SKILL.md content from metadata + body. */
-  private _rebuildSkillMd(remote: RemoteSkill): string {
-    const lines: string[] = ['---'];
-    if (remote.metadata.name) { lines.push(`name: ${remote.metadata.name}`); }
-    if (remote.metadata.description) { lines.push(`description: ${remote.metadata.description}`); }
-    if (remote.metadata.author) { lines.push(`author: ${remote.metadata.author}`); }
-    if (remote.metadata.version) { lines.push(`version: ${remote.metadata.version}`); }
-    if (remote.metadata.license) { lines.push(`license: ${remote.metadata.license}`); }
-    if (remote.metadata.tags && remote.metadata.tags.length > 0) {
-      lines.push('tags:');
-      for (const t of remote.metadata.tags) {
-        lines.push(`  - ${t}`);
-      }
-    }
-    lines.push('---');
-    lines.push('');
-    lines.push(remote.body);
-    return lines.join('\n');
-  }
-
   // ------------------------------------------------------------------
   // HTTP helpers (using Node https module to avoid type issues)
   // ------------------------------------------------------------------
 
+  /** Return HTTP request headers, including GitHub token if configured. */
+  private _getHeaders(accept?: string): Record<string, string> {
+    const headers: Record<string, string> = { 'User-Agent': 'SkillDock-VSCode' };
+    if (accept) { headers['Accept'] = accept; }
+    const config = vscode.workspace.getConfiguration('skilldock');
+    const token = config.get<string>('githubToken');
+    if (token && token.trim()) {
+      headers['Authorization'] = `token ${token.trim()}`;
+    }
+    return headers;
+  }
+
+  /** Create an appropriate Error for an HTTP failure, with rate-limit detection. */
+  private _httpError(statusCode: number, url: string, rateLimitRemaining?: string | string[]): Error {
+    if (statusCode === 403 && rateLimitRemaining === '0') {
+      return new Error(vscode.l10n.t(
+        'GitHub API rate limit exceeded. Set a personal access token in Settings → skilldock.githubToken to increase the limit.'
+      ));
+    }
+    return new Error(`HTTP ${statusCode} for ${url}`);
+  }
+
   /** Perform an HTTPS GET and return parsed JSON. */
   private _httpGetJson(url: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
-      const req = https.get(url, { headers: { 'User-Agent': 'SkillDock-VSCode', Accept: 'application/json' } }, (res) => {
+      const req = https.get(url, { headers: this._getHeaders('application/json') }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           this._httpGetJson(res.headers.location).then(resolve, reject);
           return;
         }
         if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+          reject(this._httpError(res.statusCode!, url, res.headers['x-ratelimit-remaining']));
           res.resume();
           return;
         }
@@ -282,13 +283,13 @@ export class MarketplaceService {
   /** Perform an HTTPS GET and return text. */
   private _httpGetText(url: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const req = https.get(url, { headers: { 'User-Agent': 'SkillDock-VSCode' } }, (res) => {
+      const req = https.get(url, { headers: this._getHeaders() }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           this._httpGetText(res.headers.location).then(resolve, reject);
           return;
         }
         if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+          reject(this._httpError(res.statusCode!, url, res.headers['x-ratelimit-remaining']));
           res.resume();
           return;
         }

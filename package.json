@@ -176,6 +176,12 @@
         "title": "%command.removeMarketplaceSource%",
         "category": "Skill Dock",
         "icon": "$(trash)"
+      },
+      {
+        "command": "skilldock.sortLibrary",
+        "title": "%command.sortLibrary%",
+        "category": "Skill Dock",
+        "icon": "$(list-filter)"
       }
     ],
     "menus": {
@@ -199,6 +205,11 @@
           "command": "skilldock.openMarketplace",
           "when": "view == skilldock.library",
           "group": "navigation@4"
+        },
+        {
+          "command": "skilldock.sortLibrary",
+          "when": "view == skilldock.library",
+          "group": "1_sort"
         },
         {
           "command": "skilldock.importSkill",
@@ -239,7 +250,7 @@
         },
         {
           "command": "skilldock.editSkill",
-          "when": "viewItem == skill",
+          "when": "view == skilldock.library && viewItem == skill",
           "group": "1_view@2"
         },
         {
@@ -264,7 +275,7 @@
         },
         {
           "command": "skilldock.deleteSkill",
-          "when": "viewItem == skill",
+          "when": "view == skilldock.library && viewItem == skill",
           "group": "3_danger@1"
         },
         {
@@ -305,6 +316,17 @@
           },
           "default": [],
           "description": "%config.marketplaceSources.description%"
+        },
+        "skilldock.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "%config.githubToken.description%"
+        },
+        "skilldock.librarySortBy": {
+          "type": "string",
+          "enum": ["name", "lastModified", "author"],
+          "default": "name",
+          "description": "%config.librarySortBy.description%"
         }
       }
     }
