@@ -4,9 +4,24 @@
 
 [![CI](https://github.com/yen0304/Skill-Dock/actions/workflows/ci.yml/badge.svg)](https://github.com/yen0304/Skill-Dock/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![VS Code](https://img.shields.io/badge/VS%20Code-%3E%3D1.85.0-blue?logo=visual-studio-code)](https://code.visualstudio.com/)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/skill-dock.skill-dock?label=VS%20Code%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=skill-dock.skill-dock)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/skill-dock.skill-dock?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=skill-dock.skill-dock)
 
 Browse, create, edit, delete, and import agent skills across any project — supporting multiple AI assistant formats.
+
+## Quick Install
+
+**VS Code Marketplace** (when published):
+
+[![Install in VS Code](https://img.shields.io/badge/Install%20in-VS%20Code-007ACC?style=for-the-badge&logo=visual-studio-code&logoColor=white)](vscode:extension/skill-dock.skill-dock)
+
+Or search **"Skill Dock"** in the VS Code Extensions panel (`Ctrl+Shift+X`).
+
+**Manual install from VSIX:**
+
+```bash
+code --install-extension skill-dock-0.1.0.vsix
+```
 
 ---
 
@@ -52,21 +67,6 @@ Visual form-based editor for creating and editing skills — metadata fields (na
 | 日本語 | `ja` |
 
 Follows your VS Code display language automatically.
-
----
-
-## Installation
-
-### From VSIX (Local Build)
-
-```bash
-cd skilldock-vscode
-npm install
-npm run package
-code --install-extension skill-dock-0.1.0.vsix
-```
-
-Or in VS Code: **Extensions** → **…** → **Install from VSIX…**
 
 ---
 
