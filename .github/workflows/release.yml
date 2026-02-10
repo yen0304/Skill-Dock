@@ -20,6 +20,7 @@ jobs:
         with:
           node-version: 20
           cache: "npm"
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -27,17 +28,21 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Compile
+      - name: Compile (type-check)
         run: npm run compile
 
       - name: Test
         run: npm test
 
       - name: Package
-        run: npx @vscode/vsce package
+        run: npx @vscode/vsce package --no-dependencies
 
       - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce publish --no-dependencies -p ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX Registry
+        run: npx ovsx publish *.vsix -p ${{ secrets.OVSX_PAT }}
+        continue-on-error: true
 
       - name: Get version from tag
         id: version

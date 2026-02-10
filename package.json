@@ -15,7 +15,8 @@
   "homepage": "https://github.com/yen0304/Skill-Dock#readme",
   "icon": "media/icons/skilldock-256.png",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": ">=18.0.0"
   },
   "categories": [
     "Other"
@@ -28,9 +29,7 @@
     "codex",
     "ai"
   ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
+  "activationEvents": [],
   "main": "./out/extension.js",
   "l10n": "./l10n",
   "contributes": {
@@ -53,7 +52,7 @@
         {
           "id": "skilldock.repoSkills",
           "name": "%view.repoSkills.name%",
-          "when": "workspaceFolderCount > 0"
+          "when": "workspaceFolderCount > 0 && config.skilldock.showRepoSkills"
         },
         {
           "id": "skilldock.marketplace",
@@ -311,18 +310,20 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run lint && npm run compile",
+    "vscode:prepublish": "npm run lint && npm run esbuild -- --production",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "esbuild": "node esbuild.mjs",
+    "esbuild:watch": "node esbuild.mjs --watch",
+    "watch": "npm run esbuild:watch",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "package": "npx @vscode/vsce package --allow-missing-repository",
+    "package": "npx @vscode/vsce package --no-dependencies --allow-missing-repository",
     "pretest": "npm run compile",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
@@ -331,6 +332,7 @@
     "@typescript-eslint/parser": "^8.54.0",
     "@vitest/coverage-v8": "^4.0.18",
     "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.27.3",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.1",

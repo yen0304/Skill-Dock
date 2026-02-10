@@ -4,7 +4,9 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| 0.3.x   | :white_check_mark: |
+| 0.2.x   | :white_check_mark: |
+| < 0.2.0 | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -33,8 +35,9 @@ Instead, please send an email or open a private security advisory on GitHub:
 
 ## Scope
 
-This policy applies to the Skill Dock VS Code extension and its dependencies. Since Skill Dock operates on local files only and does not make network requests, the attack surface is limited to:
+This policy applies to the Skill Dock VS Code extension and its dependencies. The attack surface includes:
 
-- Local file system access
-- Webview content security
-- Dependency vulnerabilities
+- **Local file system access** — reading/writing skills on the user's machine
+- **Webview content security** — CSP policies for skill editor and manager panels
+- **Network requests** — the Marketplace feature (v0.3.0+) fetches skill metadata from the GitHub API (`api.github.com`). No user credentials are transmitted; only public repository contents are accessed.
+- **Dependency vulnerabilities** — third-party npm packages bundled with the extension

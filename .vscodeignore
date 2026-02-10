@@ -5,6 +5,7 @@ src/**
 .prettierrc
 .prettierignore
 eslint.config.mjs
+esbuild.mjs
 *.map
 node_modules/**
 tsconfig.json
@@ -12,4 +13,6 @@ vitest.config.ts
 coverage/**
 CONTRIBUTING.md
 CODE_OF_CONDUCT.md
+SECURITY.md
 .github/**
+package-lock.json

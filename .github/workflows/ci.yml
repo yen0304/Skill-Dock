@@ -49,7 +49,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Package
-        run: npx @vscode/vsce package --allow-missing-repository
+        run: npx @vscode/vsce package --no-dependencies --allow-missing-repository
 
       - name: Upload VSIX
         if: matrix.node-version == 20
