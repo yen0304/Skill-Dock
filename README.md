@@ -9,6 +9,10 @@
 
 Browse, create, edit, delete, and import agent skills across any project — supporting multiple AI assistant formats.
 
+<p align="center">
+  <img src="media/demo.gif" alt="Skill Dock Demo" width="800">
+</p>
+
 ## Quick Install
 
 [![Install in VS Code](https://img.shields.io/badge/Install%20in-VS%20Code-007ACC?style=for-the-badge&logo=visual-studio-code&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=skill-dock.skill-dock)
