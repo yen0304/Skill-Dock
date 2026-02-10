@@ -11,16 +11,14 @@ Browse, create, edit, delete, and import agent skills across any project — sup
 
 ## Quick Install
 
-**VS Code Marketplace** (when published):
-
-[![Install in VS Code](https://img.shields.io/badge/Install%20in-VS%20Code-007ACC?style=for-the-badge&logo=visual-studio-code&logoColor=white)](vscode:extension/skill-dock.skill-dock)
+[![Install in VS Code](https://img.shields.io/badge/Install%20in-VS%20Code-007ACC?style=for-the-badge&logo=visual-studio-code&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=skill-dock.skill-dock)
 
 Or search **"Skill Dock"** in the VS Code Extensions panel (`Ctrl+Shift+X`).
 
-**Manual install from VSIX:**
+**Install from command line:**
 
 ```bash
-code --install-extension skill-dock-0.1.0.vsix
+code --install-extension skill-dock.skill-dock
 ```
 
 ---
