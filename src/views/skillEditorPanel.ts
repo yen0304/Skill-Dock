@@ -149,7 +149,7 @@ export class SkillEditorPanel {
       version: skill.metadata.version || '',
       tags: (skill.metadata.tags || []).join(', '),
       body: skill.body,
-    }) : 'null';
+    }).replace(/<\/script/gi, '<\\/script') : 'null';
 
     const titleText = this.isNew ? ('✦ ' + t.createNewSkill) : ('✎ ' + (skill?.metadata.name ?? ''));
 

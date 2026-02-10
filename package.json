@@ -2,7 +2,7 @@
   "name": "skill-dock",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "skill-dock",
   "license": "MIT",
   "repository": {
@@ -54,6 +54,11 @@
           "id": "skilldock.repoSkills",
           "name": "%view.repoSkills.name%",
           "when": "workspaceFolderCount > 0"
+        },
+        {
+          "id": "skilldock.marketplace",
+          "name": "%view.marketplace.name%",
+          "icon": "$(cloud-download)"
         }
       ]
     },
@@ -65,6 +70,10 @@
       {
         "view": "skilldock.repoSkills",
         "contents": "%welcome.repoSkills%"
+      },
+      {
+        "view": "skilldock.marketplace",
+        "contents": "%welcome.marketplace%"
       }
     ],
     "commands": [
@@ -97,6 +106,12 @@
         "title": "%command.importSkillFromRepo%",
         "category": "Skill Dock",
         "icon": "$(arrow-up)"
+      },
+      {
+        "command": "skilldock.addToLibrary",
+        "title": "%command.addToLibrary%",
+        "category": "Skill Dock",
+        "icon": "$(library)"
       },
       {
         "command": "skilldock.viewSkill",
@@ -139,6 +154,29 @@
         "title": "%command.searchSkills%",
         "category": "Skill Dock",
         "icon": "$(search)"
+      },
+      {
+        "command": "skilldock.openMarketplace",
+        "title": "%command.openMarketplace%",
+        "category": "Skill Dock",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "skilldock.openMarketplaceSource",
+        "title": "%command.openMarketplaceSource%",
+        "category": "Skill Dock"
+      },
+      {
+        "command": "skilldock.addMarketplaceSource",
+        "title": "%command.addMarketplaceSource%",
+        "category": "Skill Dock",
+        "icon": "$(add)"
+      },
+      {
+        "command": "skilldock.removeMarketplaceSource",
+        "title": "%command.removeMarketplaceSource%",
+        "category": "Skill Dock",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -159,6 +197,11 @@
           "group": "navigation@3"
         },
         {
+          "command": "skilldock.openMarketplace",
+          "when": "view == skilldock.library",
+          "group": "navigation@4"
+        },
+        {
           "command": "skilldock.importSkill",
           "when": "view == skilldock.repoSkills",
           "group": "navigation@1"
@@ -166,6 +209,16 @@
         {
           "command": "skilldock.refreshRepoSkills",
           "when": "view == skilldock.repoSkills",
+          "group": "navigation@2"
+        },
+        {
+          "command": "skilldock.openMarketplace",
+          "when": "view == skilldock.marketplace",
+          "group": "navigation@1"
+        },
+        {
+          "command": "skilldock.addMarketplaceSource",
+          "when": "view == skilldock.marketplace",
           "group": "navigation@2"
         }
       ],
@@ -206,9 +259,19 @@
           "group": "2_manage@1"
         },
         {
+          "command": "skilldock.addToLibrary",
+          "when": "view == skilldock.repoSkills && viewItem == skill",
+          "group": "inline@1"
+        },
+        {
           "command": "skilldock.deleteSkill",
           "when": "viewItem == skill",
           "group": "3_danger@1"
+        },
+        {
+          "command": "skilldock.removeMarketplaceSource",
+          "when": "view == skilldock.marketplace && viewItem == customSource",
+          "group": "inline@1"
         }
       ]
     },
@@ -235,6 +298,14 @@
           "type": "boolean",
           "default": true,
           "description": "%config.showRepoSkills.description%"
+        },
+        "skilldock.marketplaceSources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "%config.marketplaceSources.description%"
         }
       }
     }

@@ -5,15 +5,18 @@
   "viewsContainer.title": "Skill Dock",
   "view.library.name": "スキルライブラリ",
   "view.repoSkills.name": "リポジトリスキル",
+  "view.marketplace.name": "スキルマーケットプレイス",
 
   "welcome.library": "ライブラリにスキルがありません。\n[新しいスキルを作成](command:skilldock.createSkill)\n[ライブラリフォルダを開く](command:skilldock.openLibraryFolder)",
   "welcome.repoSkills": "このリポジトリにスキルがありません。\n[ライブラリからスキルをインポート](command:skilldock.importSkill)",
+  "welcome.marketplace": "GitHubからエージェントスキルを閲覧・インストール。\n[マーケットプレイスを開く](command:skilldock.openMarketplace)\n[カスタムソースを追加](command:skilldock.addMarketplaceSource)",
 
   "command.createSkill": "新しいスキルを作成",
   "command.editSkill": "スキルを編集",
   "command.deleteSkill": "スキルを削除",
   "command.importSkill": "スキルをリポジトリにインポート",
   "command.importSkillFromRepo": "スキルをライブラリに保存",
+  "command.addToLibrary": "ライブラリに追加",
   "command.viewSkill": "スキルを表示",
   "command.refreshLibrary": "ライブラリを更新",
   "command.refreshRepoSkills": "リポジトリスキルを更新",
@@ -21,8 +24,13 @@
   "command.openManager": "スキルマネージャーを開く",
   "command.duplicateSkill": "スキルを複製",
   "command.searchSkills": "スキルを検索",
+  "command.openMarketplace": "スキルマーケットプレイスを開く",
+  "command.openMarketplaceSource": "マーケットプレイスでソースを閲覧",
+  "command.addMarketplaceSource": "マーケットプレイスソースを追加",
+  "command.removeMarketplaceSource": "マーケットプレイスソースを削除",
 
   "config.libraryPath.description": "スキルライブラリのカスタムパス。デフォルトは ~/.skilldock/skills",
   "config.defaultTarget.description": "スキルをリポジトリにインポートする際のデフォルトターゲット形式",
-  "config.showRepoSkills.description": "サイドバーにリポジトリスキルパネルを表示する"
+  "config.showRepoSkills.description": "サイドバーにリポジトリスキルパネルを表示する",
+  "config.marketplaceSources.description": "マーケットプレイスでエージェントスキルをスキャンする追加のGitHubリポジトリURL"
 }

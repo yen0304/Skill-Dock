@@ -1,10 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="2" y="3" width="20" height="18" rx="2" ry="2"/>
-  <line x1="8" y1="3" x2="8" y2="21"/>
-  <path d="M12 8h5"/>
-  <path d="M12 12h5"/>
-  <path d="M12 16h3"/>
-  <circle cx="5" cy="8" r="1" fill="currentColor"/>
-  <circle cx="5" cy="12" r="1" fill="currentColor"/>
-  <circle cx="5" cy="16" r="1" fill="currentColor"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Hexagonal skill badge -->
+  <path d="M12 2 l5 3v6l-5 3-5-3V5z"/>
+  <!-- Lightning bolt inside (power/skill) -->
+  <path d="M13 5l-2 3.5h2.5L11.5 12" stroke-width="1.6"/>
+  <!-- Dock platform -->
+  <rect x="3" y="16" width="18" height="5" rx="1.5"/>
+  <!-- Connector from hex to dock -->
+  <line x1="12" y1="14" x2="12" y2="16"/>
+  <!-- Skill chip slots inside dock -->
+  <rect x="5" y="17.5" width="3" height="2" rx="0.5" fill="currentColor" stroke="none"/>
+  <rect x="10.5" y="17.5" width="3" height="2" rx="0.5" fill="currentColor" stroke="none"/>
+  <rect x="16" y="17.5" width="3" height="2" rx="0.5" fill="currentColor" stroke="none"/>
 </svg>

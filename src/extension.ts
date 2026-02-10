@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
 import { StorageService } from './services/storageService';
 import { ImportExportService } from './services/importExportService';
+import { MarketplaceService } from './services/marketplaceService';
 import { SkillLibraryProvider, SkillTreeItem } from './providers/skillLibraryProvider';
 import { RepoSkillsProvider } from './providers/repoSkillsProvider';
 import { SkillEditorPanel } from './views/skillEditorPanel';
 import { ManagerPanel } from './views/managerPanel';
+import { MarketplacePanel } from './views/marketplacePanel';
+import { MarketplaceTreeProvider, MarketplaceSourceItem } from './providers/marketplaceTreeProvider';
 import { Skill } from './models/skill';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -13,26 +16,39 @@ export function activate(context: vscode.ExtensionContext) {
   // Initialize services
   const storageService = new StorageService();
   const importExportService = new ImportExportService(storageService);
+  const marketplaceService = new MarketplaceService(storageService);
 
   // Initialize tree view providers
   const libraryProvider = new SkillLibraryProvider(storageService);
   const repoSkillsProvider = new RepoSkillsProvider();
+  const marketplaceTreeProvider = new MarketplaceTreeProvider(marketplaceService);
+
+  // Wire up import service for drag-and-drop
+  libraryProvider.setImportExportService(importExportService);
 
   // Register tree views
   const libraryTreeView = vscode.window.createTreeView('skilldock.library', {
     treeDataProvider: libraryProvider,
     showCollapseAll: false,
+    dragAndDropController: libraryProvider,
   });
 
   const repoTreeView = vscode.window.createTreeView('skilldock.repoSkills', {
     treeDataProvider: repoSkillsProvider,
     showCollapseAll: true,
+    dragAndDropController: repoSkillsProvider,
+  });
+
+  const marketplaceTreeView = vscode.window.createTreeView('skilldock.marketplace', {
+    treeDataProvider: marketplaceTreeProvider,
+    showCollapseAll: false,
   });
 
   // Helper to refresh all views
   const refreshAll = () => {
     libraryProvider.refresh();
     repoSkillsProvider.refresh();
+    marketplaceTreeProvider.refresh();
   };
 
   // ===========================================
@@ -173,6 +189,39 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Add repo skill to library (inline action)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('skilldock.addToLibrary', async (item?: SkillTreeItem) => {
+      if (!(item instanceof SkillTreeItem)) { return; }
+      try {
+        // Check for duplicate
+        const existing = await storageService.readSkill(item.skill.id);
+        if (existing) {
+          const overwrite = vscode.l10n.t('Overwrite');
+          const keepBoth = vscode.l10n.t('Keep Both');
+          const skip = vscode.l10n.t('Skip');
+          const choice = await vscode.window.showWarningMessage(
+            vscode.l10n.t('Skill "{0}" already exists in your library.', item.skill.metadata.name),
+            overwrite, keepBoth, skip,
+          );
+          if (!choice || choice === skip) { return; }
+          if (choice === overwrite) {
+            await storageService.deleteSkill(item.skill.id);
+          }
+        }
+        const saved = await importExportService.exportToLibrary(item.skill);
+        refreshAll();
+        vscode.window.showInformationMessage(
+          vscode.l10n.t('Saved "{0}" to your library.', saved.metadata.name)
+        );
+      } catch (err) {
+        vscode.window.showErrorMessage(
+          vscode.l10n.t('Save failed: {0}', String(err))
+        );
+      }
+    })
+  );
+
   // Duplicate skill
   context.subscriptions.push(
     vscode.commands.registerCommand('skilldock.duplicateSkill', async (item?: SkillTreeItem) => {
@@ -261,6 +310,77 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Open Marketplace panel
+  context.subscriptions.push(
+    vscode.commands.registerCommand('skilldock.openMarketplace', () => {
+      MarketplacePanel.createOrShow(
+        context.extensionUri,
+        marketplaceService,
+        refreshAll
+      );
+    })
+  );
+
+  // Open Marketplace filtered by a specific source (from tree view click)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('skilldock.openMarketplaceSource', (item?: MarketplaceSourceItem) => {
+      const sourceId = item instanceof MarketplaceSourceItem ? item.source.id : undefined;
+      MarketplacePanel.createOrShow(
+        context.extensionUri,
+        marketplaceService,
+        refreshAll,
+        sourceId,
+      );
+    })
+  );
+
+  // Add custom marketplace source
+  context.subscriptions.push(
+    vscode.commands.registerCommand('skilldock.addMarketplaceSource', async () => {
+      const url = await vscode.window.showInputBox({
+        prompt: vscode.l10n.t('Enter a GitHub repository URL'),
+        placeHolder: 'https://github.com/owner/repo',
+        validateInput: (value) => {
+          if (!value.trim()) {
+            return vscode.l10n.t('URL is required');
+          }
+          if (!MarketplaceService.parseGitHubUrl(value)) {
+            return vscode.l10n.t('Invalid GitHub URL: {0}', value);
+          }
+          return null;
+        },
+      });
+      if (!url) { return; }
+      try {
+        await marketplaceService.addCustomSource(url);
+        vscode.window.showInformationMessage(
+          vscode.l10n.t('Source added: {0}', url)
+        );
+      } catch (err) {
+        vscode.window.showErrorMessage(String(err));
+      }
+    })
+  );
+
+  // Remove custom marketplace source (from tree view context menu)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('skilldock.removeMarketplaceSource', async (item?: MarketplaceSourceItem) => {
+      if (!(item instanceof MarketplaceSourceItem) || item.source.isBuiltin) { return; }
+      const confirm = await vscode.window.showWarningMessage(
+        vscode.l10n.t('Remove marketplace source "{0}"?', item.source.label),
+        vscode.l10n.t('Remove'),
+        vscode.l10n.t('Cancel')
+      );
+      if (confirm !== vscode.l10n.t('Remove')) { return; }
+      try {
+        await marketplaceService.removeCustomSource(item.source.id);
+        refreshAll();
+      } catch (err) {
+        vscode.window.showErrorMessage(String(err));
+      }
+    })
+  );
+
   // ===========================================
   // Watch for workspace changes
   // ===========================================
@@ -272,6 +392,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     libraryTreeView,
     repoTreeView,
+    marketplaceTreeView,
     watcher,
     { dispose: () => storageService.dispose() },
   );

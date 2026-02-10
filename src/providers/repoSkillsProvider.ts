@@ -5,6 +5,8 @@ import { Skill, TARGET_FORMATS, TargetFormat } from '../models/skill';
 import { parseFrontmatter } from '../utils/skillParser';
 import { SkillTreeItem } from './skillLibraryProvider';
 
+const SKILL_MIME = 'application/vnd.code.tree.skilldock.reposkills';
+
 /**
  * TreeView item for a format group header
  */
@@ -25,13 +27,36 @@ class FormatGroupItem extends vscode.TreeItem {
 /**
  * TreeDataProvider for skills found in the current repo/workspace
  */
-export class RepoSkillsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+export class RepoSkillsProvider implements vscode.TreeDataProvider<vscode.TreeItem>, vscode.TreeDragAndDropController<vscode.TreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<vscode.TreeItem | undefined | null>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  // Drag and drop
+  readonly dropMimeTypes: string[] = [];
+  readonly dragMimeTypes: string[] = [SKILL_MIME];
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
   }
+
+  // --- Drag source ---
+  handleDrag(source: readonly vscode.TreeItem[], dataTransfer: vscode.DataTransfer): void {
+    const skills = source
+      .filter((item): item is SkillTreeItem => item instanceof SkillTreeItem)
+      .map((item) => ({
+        id: item.skill.id,
+        dirPath: item.skill.dirPath,
+        filePath: item.skill.filePath,
+        name: item.skill.metadata.name,
+      }));
+
+    if (skills.length > 0) {
+      dataTransfer.set(SKILL_MIME, new vscode.DataTransferItem(JSON.stringify(skills)));
+    }
+  }
+
+  // Drop not supported on repo view
+  handleDrop(): void { /* no-op */ }
 
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
     return element;

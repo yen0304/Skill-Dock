@@ -47,6 +47,77 @@ export interface TargetFormatConfig {
   scaffoldDirs?: string[];
 }
 
+/**
+ * Marketplace source — a GitHub repo (or sub-folder) that hosts skills.
+ */
+export interface MarketplaceSource {
+  /** Unique key, e.g. "anthropics/skills" */
+  id: string;
+  /** GitHub owner */
+  owner: string;
+  /** GitHub repo name */
+  repo: string;
+  /** Branch (defaults to "main") */
+  branch: string;
+  /** Sub-path inside the repo to scan (empty = root) */
+  path: string;
+  /** Display label */
+  label: string;
+  /** Whether this source ships with the extension */
+  isBuiltin: boolean;
+}
+
+/**
+ * A skill discovered from a remote marketplace source.
+ */
+export interface RemoteSkill {
+  /** Source it was found in */
+  source: MarketplaceSource;
+  /** Directory name in the remote repo */
+  id: string;
+  /** Parsed frontmatter from SKILL.md */
+  metadata: SkillMetadata;
+  /** Markdown body */
+  body: string;
+  /** Full path inside the repo (e.g. "skills/my-skill/SKILL.md") */
+  repoPath: string;
+  /** Raw download URL */
+  downloadUrl: string;
+}
+
+/**
+ * Built-in marketplace sources that ship with the extension.
+ */
+export const BUILTIN_MARKETPLACE_SOURCES: MarketplaceSource[] = [
+  {
+    id: 'anthropics/skills',
+    owner: 'anthropics',
+    repo: 'skills',
+    branch: 'main',
+    path: '',
+    label: 'Anthropic Skills',
+    isBuiltin: true,
+  },
+  {
+    id: 'openai/skills',
+    owner: 'openai',
+    repo: 'skills',
+    branch: 'main',
+    path: '',
+    label: 'OpenAI Skills',
+    isBuiltin: true,
+  },
+  {
+    id: 'github/awesome-copilot/skills',
+    owner: 'github',
+    repo: 'awesome-copilot',
+    branch: 'main',
+    path: 'skills',
+    label: 'GitHub Copilot Skills',
+    isBuiltin: true,
+  },
+];
+
 export const TARGET_FORMATS: Record<TargetFormat, TargetFormatConfig> = {
   claude: {
     id: 'claude',

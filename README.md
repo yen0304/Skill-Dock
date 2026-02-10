@@ -34,6 +34,17 @@ Full CRUD operations: create, view, edit, delete, duplicate, and search.
 
 - **Skill Library** panel — browse all locally stored skills
 - **Repo Skills** panel — view skills already in the current project, grouped by format
+- **Skill Marketplace** panel — browse marketplace sources; click to open filtered marketplace
+
+### Agent Skill Marketplace
+
+Browse and install agent skills from GitHub repositories:
+
+- **Built-in sources**: Anthropic Skills, OpenAI Skills, GitHub Awesome Copilot Skills
+- **Custom sources**: Add any GitHub repo URL as a skill source
+- **In-panel preview**: Click a skill to see its full rendered content
+- **Source filters**: Multi-select chips with Select All / Deselect All toggle
+- **One-click install**: Install skills directly to your local library
 
 ### Manager Dashboard
 
@@ -84,6 +95,9 @@ All commands are available via `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) under 
 | `Skill Dock: Search Skills` | Search skills by keyword |
 | `Skill Dock: Open Skill Manager` | Open the manager dashboard |
 | `Skill Dock: Open Library Folder` | Reveal library folder in OS file manager |
+| `Skill Dock: Open Skill Marketplace` | Browse and install skills from GitHub |
+| `Skill Dock: Add Marketplace Source` | Add a custom GitHub repository as a skill source |
+| `Skill Dock: Add to Library` | Save a repo skill to your library (inline button) |
 
 ---
 
@@ -94,6 +108,7 @@ All commands are available via `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) under 
 | `skilldock.libraryPath` | `~/.skilldock/skills` | Custom path for the skill library |
 | `skilldock.defaultTarget` | `claude` | Default target format when importing |
 | `skilldock.showRepoSkills` | `true` | Show the Repo Skills panel |
+| `skilldock.marketplaceSources` | `[]` | Custom marketplace source URLs |
 
 ---
 
