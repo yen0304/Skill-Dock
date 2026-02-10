@@ -6,7 +6,6 @@
 [![codecov](https://codecov.io/gh/yen0304/Skill-Dock/branch/main/graph/badge.svg)](https://codecov.io/gh/yen0304/Skill-Dock)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/skill-dock.skill-dock?label=VS%20Code%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=skill-dock.skill-dock)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/skill-dock.skill-dock?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=skill-dock.skill-dock)
 
 Browse, create, edit, delete, and import agent skills across any project — supporting multiple AI assistant formats.
 
