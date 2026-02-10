@@ -453,7 +453,7 @@ export class ManagerPanel {
           skill.version ? 'v' + escapeHtml(skill.version) : '',
         ].filter(Boolean).join(' · ');
 
-        return '<li class="skill-item" onclick="openSkill(\\''+escapeHtml(skill.id)+'\\')">' +
+        return '<li class="skill-item" data-skill-id="'+escapeHtml(skill.id)+'" data-action="open">' +
           '<div class="skill-icon">✦</div>' +
           '<div class="skill-info">' +
             '<div class="skill-name">' + escapeHtml(skill.name) + '</div>' +
@@ -464,14 +464,49 @@ export class ManagerPanel {
             '</div>' : '') +
           '</div>' +
           '<div class="skill-actions">' +
-            '<select class="import-select" onclick="event.stopPropagation()" onchange="importSkill(\\''+escapeHtml(skill.id)+'\\', this.value); this.selectedIndex=0;">' +
+            '<select class="import-select" data-skill-id="'+escapeHtml(skill.id)+'" data-action="import">' +
               '<option value="">' + escapeHtml(loc.importTo) + '</option>' +
               '${formatOptions}' +
             '</select>' +
-            '<button class="action-btn danger" onclick="event.stopPropagation(); deleteSkill(\\''+escapeHtml(skill.id)+'\\')">'+escapeHtml(loc.deleteBtn)+'</button>' +
+            '<button class="action-btn danger" data-skill-id="'+escapeHtml(skill.id)+'" data-action="delete">'+escapeHtml(loc.deleteBtn)+'</button>' +
           '</div>' +
         '</li>';
       }).join('');
+
+      // Attach event listeners via delegation (CSP blocks inline handlers)
+      attachSkillListEvents();
+    }
+
+    function attachSkillListEvents() {
+      // Skill item click (open)
+      skillList.querySelectorAll('.skill-item').forEach(function(item) {
+        item.addEventListener('click', function(e) {
+          // Don't trigger open when clicking actions
+          if (e.target.closest('.skill-actions')) return;
+          var id = item.getAttribute('data-skill-id');
+          if (id) openSkill(id);
+        });
+      });
+
+      // Import select
+      skillList.querySelectorAll('.import-select').forEach(function(select) {
+        select.addEventListener('click', function(e) { e.stopPropagation(); });
+        select.addEventListener('change', function() {
+          var id = select.getAttribute('data-skill-id');
+          var format = select.value;
+          if (id && format) importSkill(id, format);
+          select.selectedIndex = 0;
+        });
+      });
+
+      // Delete buttons
+      skillList.querySelectorAll('[data-action="delete"]').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var id = btn.getAttribute('data-skill-id');
+          if (id) deleteSkill(id);
+        });
+      });
     }
 
     function openSkill(id) {
@@ -497,7 +532,12 @@ export class ManagerPanel {
 </html>`;
   }
 
+  private _disposed = false;
+
   dispose(): void {
+    if (this._disposed) { return; }
+    this._disposed = true;
+
     ManagerPanel.currentPanel = undefined;
     this._panel.dispose();
     while (this._disposables.length) {

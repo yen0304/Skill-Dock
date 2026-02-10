@@ -8,6 +8,8 @@ eslint.config.mjs
 *.map
 node_modules/**
 tsconfig.json
+vitest.config.ts
+coverage/**
 CONTRIBUTING.md
 CODE_OF_CONDUCT.md
 .github/**

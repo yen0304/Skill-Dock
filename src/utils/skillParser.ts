@@ -91,6 +91,24 @@ function parseSimpleYaml(yamlStr: string): Record<string, unknown> {
   let listKey = '';
   let listItems: string[] = [];
 
+  function flushList() {
+    if (listItems.length > 0 && listKey) {
+      if (currentObject && listKey !== currentKey) {
+        // List belongs to a nested key inside the current object
+        currentObject[listKey] = listItems;
+      } else {
+        // List belongs to a top-level key (overwrite the placeholder {})
+        result[listKey] = listItems;
+        if (listKey === currentKey) {
+          currentKey = '';
+          currentObject = null;
+        }
+      }
+      listItems = [];
+      listKey = '';
+    }
+  }
+
   for (const line of lines) {
     // Skip empty lines and comments
     if (line.trim() === '' || line.trim().startsWith('#')) {
@@ -108,15 +126,7 @@ function parseSimpleYaml(yamlStr: string): Record<string, unknown> {
     }
 
     // Save previous list
-    if (listItems.length > 0 && listKey) {
-      if (currentObject) {
-        currentObject[listKey] = listItems;
-      } else {
-        result[listKey] = listItems;
-      }
-      listItems = [];
-      listKey = '';
-    }
+    flushList();
 
     const colonIndex = trimmed.indexOf(':');
     if (colonIndex === -1) { continue; }
@@ -126,10 +136,19 @@ function parseSimpleYaml(yamlStr: string): Record<string, unknown> {
 
     if (indent >= 2 && currentObject && currentKey) {
       // Nested property
-      currentObject[key] = unquote(value);
+      if (value === '' || value === '|') {
+        // Nested key with empty value (might be followed by a list)
+        listKey = key;
+      } else {
+        currentObject[key] = unquote(value);
+      }
     } else if (value === '' || value === '|') {
-      // Start of nested object or multiline
+      // Start of nested object, list, or empty value at top level
       if (indent === 0) {
+        // If previous key was empty with no nested content, set to empty string
+        if (currentKey && currentObject && Object.keys(currentObject).length === 0) {
+          result[currentKey] = '';
+        }
         currentKey = key;
         currentObject = {};
         result[key] = currentObject;
@@ -137,7 +156,11 @@ function parseSimpleYaml(yamlStr: string): Record<string, unknown> {
         listKey = key;
       }
     } else {
-      // Top-level property
+      // Top-level property with a value
+      // If previous key was empty with no nested content, set to empty string
+      if (currentKey && currentObject && Object.keys(currentObject).length === 0) {
+        result[currentKey] = '';
+      }
       currentKey = '';
       currentObject = null;
       listKey = key;
@@ -146,12 +169,11 @@ function parseSimpleYaml(yamlStr: string): Record<string, unknown> {
   }
 
   // Save remaining list
-  if (listItems.length > 0 && listKey) {
-    if (currentObject) {
-      currentObject[listKey] = listItems;
-    } else {
-      result[listKey] = listItems;
-    }
+  flushList();
+
+  // If the last key was empty with no nested content, set to empty string
+  if (currentKey && currentObject && Object.keys(currentObject).length === 0) {
+    result[currentKey] = '';
   }
 
   return result;

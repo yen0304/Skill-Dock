@@ -30,6 +30,9 @@ jobs:
       - name: Compile
         run: npm run compile
 
+      - name: Test
+        run: npm test
+
       - name: Package
         run: npx @vscode/vsce package
 

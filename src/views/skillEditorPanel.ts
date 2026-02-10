@@ -349,8 +349,8 @@ export class SkillEditorPanel {
   </div>
 
   <div class="actions">
-    <button class="btn-secondary" onclick="cancel()">${t.cancel}</button>
-    <button class="btn-primary" onclick="save()">
+    <button class="btn-secondary" id="cancelBtn">${t.cancel}</button>
+    <button class="btn-primary" id="saveBtn">
       ${this.isNew ? t.createSkill : t.saveChanges}
     </button>
   </div>
@@ -389,7 +389,7 @@ export class SkillEditorPanel {
         return false;
       }
 
-      if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(id) && id.length > 1) {
+      if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(id)) {
         errorEl.textContent = loc.idFormat;
         errorEl.style.display = 'block';
         return false;
@@ -434,12 +434,21 @@ export class SkillEditorPanel {
     function cancel() {
       vscode.postMessage({ command: 'cancel' });
     }
+
+    // Use addEventListener instead of inline onclick (CSP blocks inline handlers)
+    document.getElementById('saveBtn').addEventListener('click', save);
+    document.getElementById('cancelBtn').addEventListener('click', cancel);
   </script>
 </body>
 </html>`;
   }
 
+  private _disposed = false;
+
   dispose(): void {
+    if (this._disposed) { return; }
+    this._disposed = true;
+
     const key = this.skill?.id || '__new__';
     SkillEditorPanel.currentPanels.delete(key);
 
