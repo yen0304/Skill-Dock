@@ -142,7 +142,7 @@ describe('serializeSkill', () => {
     expect(result).toContain('  - ai');
     expect(result).toContain('metadata:');
     expect(result).toContain('  author: tester');
-    expect(result).toContain("  version: '1.0'");
+    expect(result).toContain('  version: "1.0"');
     expect(result).toContain('# Test Content');
   });
 
