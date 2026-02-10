@@ -5,6 +5,31 @@ All notable changes to the Skill Dock extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-02-11
+
+### Added
+
+- **GitHub Token authentication**: New `skilldock.githubToken` setting for GitHub API requests; increases rate limit from 60 to 5,000 requests per hour
+- **Rate limit detection**: Friendly error message with configuration guidance when GitHub API rate limit is exceeded (HTTP 403)
+- **Library sort**: New `skilldock.librarySortBy` setting and `Sort Library` command to sort by name (A-Z), last modified (newest first), or author (A-Z)
+- **281 tests** with comprehensive coverage:
+  - 14 new network layer tests for MarketplaceService (44% → 93% coverage)
+  - 12 new command handler happy-path tests for extension.ts (59% → 89% coverage)
+  - Expanded panel test coverage with message handler and HTML tests
+- **Husky pre-commit hooks**: Runs `tsc --noEmit` and `vitest run` before every commit
+
+### Fixed
+
+- **installSkill double-serialization**: Marketplace skill install produced corrupted SKILL.md with duplicate frontmatter; now passes body directly to `createSkill`
+- **Repo skill context menu**: `Edit Skill` and `Delete Skill` commands were shown on repo skill items but only operated on library paths; now restricted to library view only
+
+### Changed
+
+- **Zero `any` types in production code**: Replaced 7 `any` instances with proper interfaces (`GitTreeItem`, `GitTreeResponse`, `WebviewMessage`)
+- **Async I/O**: Converted all `fs` operations to `fs/promises` for non-blocking file access
+- **YAML package migration**: Replaced hand-written frontmatter parser with the `yaml` package for robust parsing
+- Removed dead code: `_rebuildSkillMd()` method that was producing duplicate frontmatter
+
 ## [0.3.0] - 2026-02-10
 
 ### Added
@@ -67,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **i18n**: Multi-language support (English, Traditional Chinese, Japanese)
 - **Auto-detection**: Automatically scan and display skills in opened repositories
 
+[0.4.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.4.0
 [0.3.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.3.0
 [0.2.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.2.0
 [0.1.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.1.0

@@ -97,7 +97,9 @@ All commands are available via `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) under 
 | `Skill Dock: Open Library Folder` | Reveal library folder in OS file manager |
 | `Skill Dock: Open Skill Marketplace` | Browse and install skills from GitHub |
 | `Skill Dock: Add Marketplace Source` | Add a custom GitHub repository as a skill source |
+| `Skill Dock: Remove Marketplace Source` | Remove a custom marketplace source |
 | `Skill Dock: Add to Library` | Save a repo skill to your library (inline button) |
+| `Skill Dock: Sort Library` | Change library sort order (name / last modified / author) |
 
 ---
 
@@ -109,6 +111,8 @@ All commands are available via `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) under 
 | `skilldock.defaultTarget` | `claude` | Default target format when importing |
 | `skilldock.showRepoSkills` | `true` | Show the Repo Skills panel |
 | `skilldock.marketplaceSources` | `[]` | Custom marketplace source URLs |
+| `skilldock.githubToken` | `""` | GitHub personal access token (raises rate limit to 5,000/hr) |
+| `skilldock.librarySortBy` | `"name"` | Library sort order: `name`, `lastModified`, or `author` |
 
 ---
 
@@ -120,10 +124,12 @@ Skills use the `SKILL.md` convention with YAML frontmatter:
 ---
 name: my-skill
 description: What this skill does and when to use it.
+author: your-name
+version: "1.0"
 license: MIT
-metadata:
-  author: your-name
-  version: "1.0"
+tags:
+  - coding
+  - review
 ---
 
 # My Skill
