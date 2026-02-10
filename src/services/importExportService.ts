@@ -1,8 +1,20 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Skill, TargetFormat, TARGET_FORMATS } from '../models/skill';
 import { StorageService } from './storageService';
+
+/**
+ * Check if a path exists (async replacement for fs.existsSync)
+ */
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Service for importing skills into repos and exporting skills from repos
@@ -24,7 +36,7 @@ export class ImportExportService {
     const targetDir = path.join(workspaceRoot, config.skillsDir, skill.id);
 
     // Check if skill already exists
-    if (fs.existsSync(targetDir)) {
+    if (await pathExists(targetDir)) {
       const overwrite = await vscode.window.showWarningMessage(
         vscode.l10n.t('Skill "{0}" already exists in {1}. Overwrite?', skill.metadata.name, config.skillsDir),
         vscode.l10n.t('Overwrite'),
@@ -33,18 +45,18 @@ export class ImportExportService {
       if (overwrite !== vscode.l10n.t('Overwrite')) {
         throw new Error('Import cancelled');
       }
-      fs.rmSync(targetDir, { recursive: true, force: true });
+      await fs.rm(targetDir, { recursive: true, force: true });
     }
 
     // Copy skill directory
-    this.copyDirectorySync(skill.dirPath, targetDir);
+    await this.copyDirectory(skill.dirPath, targetDir);
 
     // Create scaffold directories for codex format
     if (config.scaffoldDirs) {
       for (const dir of config.scaffoldDirs) {
         const scaffoldPath = path.join(targetDir, dir);
-        if (!fs.existsSync(scaffoldPath)) {
-          fs.mkdirSync(scaffoldPath, { recursive: true });
+        if (!(await pathExists(scaffoldPath))) {
+          await fs.mkdir(scaffoldPath, { recursive: true });
         }
       }
     }
@@ -157,19 +169,19 @@ export class ImportExportService {
   /**
    * Recursively copy a directory
    */
-  private copyDirectorySync(src: string, dest: string): void {
-    if (!fs.existsSync(dest)) {
-      fs.mkdirSync(dest, { recursive: true });
+  private async copyDirectory(src: string, dest: string): Promise<void> {
+    if (!(await pathExists(dest))) {
+      await fs.mkdir(dest, { recursive: true });
     }
 
-    const entries = fs.readdirSync(src, { withFileTypes: true });
+    const entries = await fs.readdir(src, { withFileTypes: true });
     for (const entry of entries) {
       const srcPath = path.join(src, entry.name);
       const destPath = path.join(dest, entry.name);
       if (entry.isDirectory()) {
-        this.copyDirectorySync(srcPath, destPath);
+        await this.copyDirectory(srcPath, destPath);
       } else {
-        fs.copyFileSync(srcPath, destPath);
+        await fs.copyFile(srcPath, destPath);
       }
     }
   }

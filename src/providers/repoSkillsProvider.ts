@@ -1,11 +1,23 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Skill, TARGET_FORMATS, TargetFormat } from '../models/skill';
 import { parseFrontmatter } from '../utils/skillParser';
 import { SkillTreeItem } from './skillLibraryProvider';
 
 const SKILL_MIME = 'application/vnd.code.tree.skilldock.reposkills';
+
+/**
+ * Check if a path exists (async replacement for fs.existsSync)
+ */
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * TreeView item for a format group header
@@ -76,8 +88,8 @@ export class RepoSkillsProvider implements vscode.TreeDataProvider<vscode.TreeIt
 
       for (const [formatKey, config] of Object.entries(TARGET_FORMATS)) {
         const skillsDir = path.join(workspaceRoot, config.skillsDir);
-        if (fs.existsSync(skillsDir)) {
-          const skills = this.scanSkillsDir(skillsDir);
+        if (await pathExists(skillsDir)) {
+          const skills = await this.scanSkillsDir(skillsDir);
           if (skills.length > 0) {
             items.push(new FormatGroupItem(formatKey as TargetFormat, skills.length, workspaceRoot));
           }
@@ -91,7 +103,7 @@ export class RepoSkillsProvider implements vscode.TreeDataProvider<vscode.TreeIt
     if (element instanceof FormatGroupItem) {
       const config = TARGET_FORMATS[element.format];
       const skillsDir = path.join(element.workspaceRoot, config.skillsDir);
-      const skills = this.scanSkillsDir(skillsDir);
+      const skills = await this.scanSkillsDir(skillsDir);
       return skills.map(skill => new SkillTreeItem(skill, 'repo'));
     }
 
@@ -101,11 +113,11 @@ export class RepoSkillsProvider implements vscode.TreeDataProvider<vscode.TreeIt
   /**
    * Scan a directory for skills (look for SKILL.md in subdirectories)
    */
-  private scanSkillsDir(skillsDir: string): Skill[] {
+  private async scanSkillsDir(skillsDir: string): Promise<Skill[]> {
     const skills: Skill[] = [];
 
     try {
-      const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+      const entries = await fs.readdir(skillsDir, { withFileTypes: true });
 
       for (const entry of entries) {
         if (!entry.isDirectory() || entry.name.startsWith('.')) {
@@ -113,14 +125,14 @@ export class RepoSkillsProvider implements vscode.TreeDataProvider<vscode.TreeIt
         }
 
         const skillFile = path.join(skillsDir, entry.name, 'SKILL.md');
-        if (!fs.existsSync(skillFile)) {
+        if (!(await pathExists(skillFile))) {
           continue;
         }
 
         try {
-          const content = fs.readFileSync(skillFile, 'utf-8');
+          const content = await fs.readFile(skillFile, 'utf-8');
           const { metadata, body } = parseFrontmatter(content);
-          const stat = fs.statSync(skillFile);
+          const stat = await fs.stat(skillFile);
 
           skills.push({
             id: entry.name,

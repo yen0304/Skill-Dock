@@ -1,9 +1,21 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { Skill, SkillMetadata } from '../models/skill';
 import { parseFrontmatter, serializeSkill } from '../utils/skillParser';
+
+/**
+ * Check if a path exists (async replacement for fs.existsSync)
+ */
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Service for managing local skill storage (CRUD operations)
@@ -15,7 +27,6 @@ export class StorageService {
 
   constructor() {
     this._libraryPath = this.resolveLibraryPath();
-    this.ensureDirectory(this._libraryPath);
   }
 
   get libraryPath(): string {
@@ -41,10 +52,8 @@ export class StorageService {
   /**
    * Ensure a directory exists, creating it if necessary
    */
-  private ensureDirectory(dirPath: string): void {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
+  private async ensureDirectory(dirPath: string): Promise<void> {
+    await fs.mkdir(dirPath, { recursive: true });
   }
 
   /**
@@ -52,9 +61,9 @@ export class StorageService {
    */
   async listSkills(): Promise<Skill[]> {
     this._libraryPath = this.resolveLibraryPath();
-    this.ensureDirectory(this._libraryPath);
+    await this.ensureDirectory(this._libraryPath);
 
-    const entries = fs.readdirSync(this._libraryPath, { withFileTypes: true });
+    const entries = await fs.readdir(this._libraryPath, { withFileTypes: true });
     const skills: Skill[] = [];
 
     for (const entry of entries) {
@@ -65,7 +74,7 @@ export class StorageService {
       const skillDir = path.join(this._libraryPath, entry.name);
       const skillFile = path.join(skillDir, 'SKILL.md');
 
-      if (!fs.existsSync(skillFile)) {
+      if (!(await pathExists(skillFile))) {
         continue;
       }
 
@@ -89,17 +98,17 @@ export class StorageService {
     const skillDir = path.join(this._libraryPath, id);
     const skillFile = path.join(skillDir, 'SKILL.md');
 
-    if (!fs.existsSync(skillFile)) {
+    if (!(await pathExists(skillFile))) {
       return null;
     }
 
-    const content = fs.readFileSync(skillFile, 'utf-8');
+    const content = await fs.readFile(skillFile, 'utf-8');
     const { metadata, body } = parseFrontmatter(content);
-    const stat = fs.statSync(skillFile);
+    const stat = await fs.stat(skillFile);
 
     // Find additional files
     const additionalFiles: string[] = [];
-    const allEntries = fs.readdirSync(skillDir);
+    const allEntries = await fs.readdir(skillDir);
     for (const entry of allEntries) {
       if (entry !== 'SKILL.md') {
         additionalFiles.push(entry);
@@ -123,15 +132,15 @@ export class StorageService {
   async createSkill(id: string, metadata: SkillMetadata, body: string): Promise<Skill> {
     const skillDir = path.join(this._libraryPath, id);
 
-    if (fs.existsSync(skillDir)) {
+    if (await pathExists(skillDir)) {
       throw new Error(vscode.l10n.t('Skill "{0}" already exists', id));
     }
 
-    this.ensureDirectory(skillDir);
+    await this.ensureDirectory(skillDir);
 
     const content = serializeSkill(metadata, body);
     const skillFile = path.join(skillDir, 'SKILL.md');
-    fs.writeFileSync(skillFile, content, 'utf-8');
+    await fs.writeFile(skillFile, content, 'utf-8');
 
     this._onDidChange.fire();
 
@@ -149,12 +158,12 @@ export class StorageService {
     const skillDir = path.join(this._libraryPath, id);
     const skillFile = path.join(skillDir, 'SKILL.md');
 
-    if (!fs.existsSync(skillFile)) {
+    if (!(await pathExists(skillFile))) {
       throw new Error(vscode.l10n.t('Skill "{0}" not found', id));
     }
 
     const content = serializeSkill(metadata, body);
-    fs.writeFileSync(skillFile, content, 'utf-8');
+    await fs.writeFile(skillFile, content, 'utf-8');
 
     this._onDidChange.fire();
 
@@ -171,11 +180,11 @@ export class StorageService {
   async deleteSkill(id: string): Promise<void> {
     const skillDir = path.join(this._libraryPath, id);
 
-    if (!fs.existsSync(skillDir)) {
+    if (!(await pathExists(skillDir))) {
       throw new Error(vscode.l10n.t('Skill "{0}" not found', id));
     }
 
-    fs.rmSync(skillDir, { recursive: true, force: true });
+    await fs.rm(skillDir, { recursive: true, force: true });
     this._onDidChange.fire();
   }
 
@@ -189,7 +198,7 @@ export class StorageService {
     }
 
     const newDir = path.join(this._libraryPath, newId);
-    this.copyDirectorySync(source.dirPath, newDir);
+    await this.copyDirectory(source.dirPath, newDir);
 
     this._onDidChange.fire();
 
@@ -206,7 +215,7 @@ export class StorageService {
   async importFromPath(skillDir: string): Promise<Skill> {
     const skillFile = path.join(skillDir, 'SKILL.md');
 
-    if (!fs.existsSync(skillFile)) {
+    if (!(await pathExists(skillFile))) {
       throw new Error(vscode.l10n.t('No SKILL.md found at {0}', skillDir));
     }
 
@@ -215,13 +224,13 @@ export class StorageService {
 
     // Handle name collisions
     let counter = 1;
-    while (fs.existsSync(path.join(this._libraryPath, targetId))) {
+    while (await pathExists(path.join(this._libraryPath, targetId))) {
       targetId = `${dirName}-${counter}`;
       counter++;
     }
 
     const targetDir = path.join(this._libraryPath, targetId);
-    this.copyDirectorySync(skillDir, targetDir);
+    await this.copyDirectory(skillDir, targetDir);
 
     this._onDidChange.fire();
 
@@ -251,18 +260,18 @@ export class StorageService {
   /**
    * Recursively copy a directory
    */
-  private copyDirectorySync(src: string, dest: string): void {
-    this.ensureDirectory(dest);
-    const entries = fs.readdirSync(src, { withFileTypes: true });
+  private async copyDirectory(src: string, dest: string): Promise<void> {
+    await this.ensureDirectory(dest);
+    const entries = await fs.readdir(src, { withFileTypes: true });
 
     for (const entry of entries) {
       const srcPath = path.join(src, entry.name);
       const destPath = path.join(dest, entry.name);
 
       if (entry.isDirectory()) {
-        this.copyDirectorySync(srcPath, destPath);
+        await this.copyDirectory(srcPath, destPath);
       } else {
-        fs.copyFileSync(srcPath, destPath);
+        await fs.copyFile(srcPath, destPath);
       }
     }
   }
