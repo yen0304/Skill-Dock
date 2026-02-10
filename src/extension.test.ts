@@ -25,6 +25,8 @@ vi.mock('vscode', async () => {
 });
 
 import { activate, deactivate } from './extension';
+import { SkillTreeItem } from './providers/skillLibraryProvider';
+import { MarketplaceSourceItem } from './providers/marketplaceTreeProvider';
 
 describe('extension', () => {
   let tmpDir: string;
@@ -292,6 +294,314 @@ describe('extension', () => {
     it('removeMarketplaceSource with no item should do nothing', async () => {
       const handler = commandHandlers.get('skilldock.removeMarketplaceSource');
       await handler!();
+    });
+
+    // ===========================================
+    // Happy path tests
+    // ===========================================
+
+    it('deleteSkill with SkillTreeItem should delete on confirm', async () => {
+      const skillDir = path.join(tmpDir, 'to-delete');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: Delete Me\ndescription: bye\n---\nBody');
+
+      const skill = {
+        id: 'to-delete',
+        metadata: { name: 'Delete Me', description: 'bye' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: path.join(skillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'library');
+
+      vi.mocked(vscodeWindow.showWarningMessage).mockResolvedValue('Delete' as any);
+
+      const handler = commandHandlers.get('skilldock.deleteSkill');
+      await handler!(treeItem);
+
+      expect(fs.existsSync(skillDir)).toBe(false);
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Delete Me')
+      );
+    });
+
+    it('viewSkill with SkillTreeItem should open document', async () => {
+      const skillDir = path.join(tmpDir, 'view-me');
+      fs.mkdirSync(skillDir, { recursive: true });
+      const skillFile = path.join(skillDir, 'SKILL.md');
+      fs.writeFileSync(skillFile, '---\nname: View Me\ndescription: see\n---\nBody');
+
+      const skill = {
+        id: 'view-me',
+        metadata: { name: 'View Me', description: 'see' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: skillFile,
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'library');
+
+      vi.mocked(workspace.openTextDocument).mockResolvedValue({} as any);
+
+      const handler = commandHandlers.get('skilldock.viewSkill');
+      await handler!(treeItem);
+
+      expect(workspace.openTextDocument).toHaveBeenCalledWith(skillFile);
+      expect(vscodeWindow.showTextDocument).toHaveBeenCalled();
+    });
+
+    it('viewSkill with Skill object should open document', async () => {
+      const skillDir = path.join(tmpDir, 'view-direct');
+      fs.mkdirSync(skillDir, { recursive: true });
+      const skillFile = path.join(skillDir, 'SKILL.md');
+      fs.writeFileSync(skillFile, '---\nname: Direct\ndescription: d\n---\nBody');
+
+      const skill = {
+        id: 'view-direct',
+        metadata: { name: 'Direct', description: 'd' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: skillFile,
+        lastModified: Date.now(),
+      };
+
+      vi.mocked(workspace.openTextDocument).mockResolvedValue({} as any);
+
+      const handler = commandHandlers.get('skilldock.viewSkill');
+      await handler!(skill);
+
+      expect(workspace.openTextDocument).toHaveBeenCalledWith(skillFile);
+    });
+
+    it('editSkill with SkillTreeItem should create editor panel', async () => {
+      const skillDir = path.join(tmpDir, 'edit-me');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: Edit Me\ndescription: ed\n---\nBody');
+
+      const skill = {
+        id: 'edit-me',
+        metadata: { name: 'Edit Me', description: 'ed' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: path.join(skillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'library');
+
+      const handler = commandHandlers.get('skilldock.editSkill');
+      await handler!(treeItem);
+
+      expect(vscodeWindow.createWebviewPanel).toHaveBeenCalledWith(
+        'skilldockEditor',
+        expect.any(String),
+        expect.any(Number),
+        expect.objectContaining({ enableScripts: true })
+      );
+    });
+
+    it('duplicateSkill with SkillTreeItem should create copy', async () => {
+      const skillDir = path.join(tmpDir, 'orig-skill');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: Original\ndescription: orig\n---\nBody');
+
+      const skill = {
+        id: 'orig-skill',
+        metadata: { name: 'Original', description: 'orig' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: path.join(skillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'library');
+
+      vi.mocked(vscodeWindow.showInputBox).mockResolvedValue('orig-skill-copy');
+
+      const handler = commandHandlers.get('skilldock.duplicateSkill');
+      await handler!(treeItem);
+
+      expect(fs.existsSync(path.join(tmpDir, 'orig-skill-copy', 'SKILL.md'))).toBe(true);
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Original')
+      );
+    });
+
+    it('importSkillFromRepo with SkillTreeItem should save to library', async () => {
+      const repoSkillDir = path.join(tmpDir, '__repo', 'repo-skill');
+      fs.mkdirSync(repoSkillDir, { recursive: true });
+      fs.writeFileSync(path.join(repoSkillDir, 'SKILL.md'), '---\nname: Repo Skill\ndescription: from repo\n---\n# Content');
+
+      const skill = {
+        id: 'repo-skill',
+        metadata: { name: 'Repo Skill', description: 'from repo' },
+        body: '# Content',
+        dirPath: repoSkillDir,
+        filePath: path.join(repoSkillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'repo');
+
+      const handler = commandHandlers.get('skilldock.importSkillFromRepo');
+      await handler!(treeItem);
+
+      expect(fs.existsSync(path.join(tmpDir, 'repo-skill', 'SKILL.md'))).toBe(true);
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Repo Skill')
+      );
+    });
+
+    it('addToLibrary with new skill should add successfully', async () => {
+      const repoSkillDir = path.join(tmpDir, '__repo', 'new-add');
+      fs.mkdirSync(repoSkillDir, { recursive: true });
+      fs.writeFileSync(path.join(repoSkillDir, 'SKILL.md'), '---\nname: New Add\ndescription: adding\n---\n# New');
+
+      const skill = {
+        id: 'new-add',
+        metadata: { name: 'New Add', description: 'adding' },
+        body: '# New',
+        dirPath: repoSkillDir,
+        filePath: path.join(repoSkillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'repo');
+
+      const handler = commandHandlers.get('skilldock.addToLibrary');
+      await handler!(treeItem);
+
+      expect(fs.existsSync(path.join(tmpDir, 'new-add', 'SKILL.md'))).toBe(true);
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('New Add')
+      );
+    });
+
+    it('addToLibrary with existing skill and overwrite should replace', async () => {
+      const existingDir = path.join(tmpDir, 'existing-lib');
+      fs.mkdirSync(existingDir, { recursive: true });
+      fs.writeFileSync(path.join(existingDir, 'SKILL.md'), '---\nname: Old\ndescription: old\n---\n# Old');
+
+      const repoDir = path.join(tmpDir, '__repo', 'existing-lib');
+      fs.mkdirSync(repoDir, { recursive: true });
+      fs.writeFileSync(path.join(repoDir, 'SKILL.md'), '---\nname: New\ndescription: new\n---\n# New');
+
+      const skill = {
+        id: 'existing-lib',
+        metadata: { name: 'New', description: 'new' },
+        body: '# New',
+        dirPath: repoDir,
+        filePath: path.join(repoDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'repo');
+
+      vi.mocked(vscodeWindow.showWarningMessage).mockResolvedValue('Overwrite' as any);
+
+      const handler = commandHandlers.get('skilldock.addToLibrary');
+      await handler!(treeItem);
+
+      expect(fs.existsSync(path.join(tmpDir, 'existing-lib', 'SKILL.md'))).toBe(true);
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('New')
+      );
+    });
+
+    it('addToLibrary with existing skill and skip should do nothing', async () => {
+      const existingDir = path.join(tmpDir, 'skip-me');
+      fs.mkdirSync(existingDir, { recursive: true });
+      fs.writeFileSync(path.join(existingDir, 'SKILL.md'), '---\nname: Skip\ndescription: skip\n---\n# Old');
+
+      const repoDir = path.join(tmpDir, '__repo', 'skip-me');
+      fs.mkdirSync(repoDir, { recursive: true });
+      fs.writeFileSync(path.join(repoDir, 'SKILL.md'), '---\nname: Skip New\ndescription: new\n---\n# New');
+
+      const skill = {
+        id: 'skip-me',
+        metadata: { name: 'Skip New', description: 'new' },
+        body: '# New',
+        dirPath: repoDir,
+        filePath: path.join(repoDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'repo');
+
+      vi.mocked(vscodeWindow.showWarningMessage).mockResolvedValue('Skip' as any);
+
+      const handler = commandHandlers.get('skilldock.addToLibrary');
+      await handler!(treeItem);
+
+      const content = fs.readFileSync(path.join(tmpDir, 'skip-me', 'SKILL.md'), 'utf-8');
+      expect(content).toContain('Old');
+    });
+
+    it('importSkill with SkillTreeItem should import to workspace', async () => {
+      const skillDir = path.join(tmpDir, 'import-me');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: Import Me\ndescription: imp\n---\nBody');
+
+      const skill = {
+        id: 'import-me',
+        metadata: { name: 'Import Me', description: 'imp' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: path.join(skillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'library');
+
+      const tmpWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'ext-ws-'));
+      (workspace as any).workspaceFolders = [{ uri: { fsPath: tmpWorkspace } }];
+
+      vi.mocked(vscodeWindow.showQuickPick).mockResolvedValue({ format: 'claude' } as any);
+
+      const handler = commandHandlers.get('skilldock.importSkill');
+      await handler!(treeItem);
+
+      expect(fs.existsSync(path.join(tmpWorkspace, '.claude', 'skills', 'import-me', 'SKILL.md'))).toBe(true);
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Import Me')
+      );
+
+      (workspace as any).workspaceFolders = undefined;
+      fs.rmSync(tmpWorkspace, { recursive: true, force: true });
+    });
+
+    it('removeMarketplaceSource with confirm should remove source', async () => {
+      const source = {
+        id: 'testorg/custom-skills',
+        owner: 'testorg',
+        repo: 'custom-skills',
+        branch: 'main',
+        path: '',
+        label: 'Test Org / Custom Skills',
+        isBuiltin: false,
+      };
+      const sourceItem = new MarketplaceSourceItem(source);
+
+      vi.mocked(vscodeWindow.showWarningMessage).mockResolvedValue('Remove' as any);
+
+      const handler = commandHandlers.get('skilldock.removeMarketplaceSource');
+      await handler!(sourceItem);
+
+      // Handler should complete without errors (removeCustomSource updates config)
+      expect(vscodeWindow.showErrorMessage).not.toHaveBeenCalled();
+    });
+
+    it('addMarketplaceSource with error should show error message', async () => {
+      vi.mocked(vscodeWindow.showInputBox).mockResolvedValue('https://github.com/org/repo');
+
+      // Make the URL a duplicate so addCustomSource throws
+      const getConfig = vi.mocked(workspace.getConfiguration);
+      getConfig.mockReturnValueOnce({
+        get: (_key: string, def?: unknown) => {
+          if (_key === 'marketplaceSources') { return ['https://github.com/org/repo']; }
+          return def;
+        },
+        update: vi.fn().mockResolvedValue(undefined),
+      } as any);
+
+      const handler = commandHandlers.get('skilldock.addMarketplaceSource');
+      await handler!();
+
+      expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
     });
   });
 });
