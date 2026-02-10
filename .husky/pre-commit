@@ -1,0 +1,2 @@
+npx tsc --noEmit
+npm test
