@@ -1,0 +1,28 @@
+{
+  "displayName": "Skill Dock",
+  "description": "Manage, browse, and import agent skills locally. Supports Claude, Cursor, Codex and more.",
+
+  "viewsContainer.title": "Skill Dock",
+  "view.library.name": "Skill Library",
+  "view.repoSkills.name": "Repo Skills",
+
+  "welcome.library": "No skills found in your library.\n[Create New Skill](command:skilldock.createSkill)\n[Open Skill Library Folder](command:skilldock.openLibraryFolder)",
+  "welcome.repoSkills": "No skills found in this repository.\n[Import Skill from Library](command:skilldock.importSkill)",
+
+  "command.createSkill": "Create New Skill",
+  "command.editSkill": "Edit Skill",
+  "command.deleteSkill": "Delete Skill",
+  "command.importSkill": "Import Skill to Repo",
+  "command.importSkillFromRepo": "Save Skill to Library",
+  "command.viewSkill": "View Skill",
+  "command.refreshLibrary": "Refresh Library",
+  "command.refreshRepoSkills": "Refresh Repo Skills",
+  "command.openLibraryFolder": "Open Library Folder",
+  "command.openManager": "Open Skill Manager",
+  "command.duplicateSkill": "Duplicate Skill",
+  "command.searchSkills": "Search Skills",
+
+  "config.libraryPath.description": "Custom path for the skill library. Defaults to ~/.skilldock/skills",
+  "config.defaultTarget.description": "Default target format when importing skills to a repo",
+  "config.showRepoSkills.description": "Show the Repo Skills panel in the sidebar"
+}

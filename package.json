@@ -1,0 +1,266 @@
+{
+  "name": "skill-dock",
+  "displayName": "%displayName%",
+  "description": "%description%",
+  "version": "0.1.0",
+  "publisher": "skill-dock",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yen0304/Skill-Dock.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yen0304/Skill-Dock/issues"
+  },
+  "homepage": "https://github.com/yen0304/Skill-Dock#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "agent",
+    "skills",
+    "claude",
+    "cursor",
+    "codex",
+    "ai"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "l10n": "./l10n",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "skilldock",
+          "title": "%viewsContainer.title%",
+          "icon": "media/icons/skilldock.svg"
+        }
+      ]
+    },
+    "views": {
+      "skilldock": [
+        {
+          "id": "skilldock.library",
+          "name": "%view.library.name%",
+          "icon": "media/icons/skilldock.svg"
+        },
+        {
+          "id": "skilldock.repoSkills",
+          "name": "%view.repoSkills.name%",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "skilldock.library",
+        "contents": "%welcome.library%"
+      },
+      {
+        "view": "skilldock.repoSkills",
+        "contents": "%welcome.repoSkills%"
+      }
+    ],
+    "commands": [
+      {
+        "command": "skilldock.createSkill",
+        "title": "%command.createSkill%",
+        "category": "Skill Dock",
+        "icon": "$(add)"
+      },
+      {
+        "command": "skilldock.editSkill",
+        "title": "%command.editSkill%",
+        "category": "Skill Dock",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "skilldock.deleteSkill",
+        "title": "%command.deleteSkill%",
+        "category": "Skill Dock",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "skilldock.importSkill",
+        "title": "%command.importSkill%",
+        "category": "Skill Dock",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "skilldock.importSkillFromRepo",
+        "title": "%command.importSkillFromRepo%",
+        "category": "Skill Dock",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "skilldock.viewSkill",
+        "title": "%command.viewSkill%",
+        "category": "Skill Dock",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "skilldock.refreshLibrary",
+        "title": "%command.refreshLibrary%",
+        "category": "Skill Dock",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "skilldock.refreshRepoSkills",
+        "title": "%command.refreshRepoSkills%",
+        "category": "Skill Dock",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "skilldock.openLibraryFolder",
+        "title": "%command.openLibraryFolder%",
+        "category": "Skill Dock",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "skilldock.openManager",
+        "title": "%command.openManager%",
+        "category": "Skill Dock",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "skilldock.duplicateSkill",
+        "title": "%command.duplicateSkill%",
+        "category": "Skill Dock",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "skilldock.searchSkills",
+        "title": "%command.searchSkills%",
+        "category": "Skill Dock",
+        "icon": "$(search)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "skilldock.createSkill",
+          "when": "view == skilldock.library",
+          "group": "navigation@1"
+        },
+        {
+          "command": "skilldock.refreshLibrary",
+          "when": "view == skilldock.library",
+          "group": "navigation@2"
+        },
+        {
+          "command": "skilldock.openManager",
+          "when": "view == skilldock.library",
+          "group": "navigation@3"
+        },
+        {
+          "command": "skilldock.importSkill",
+          "when": "view == skilldock.repoSkills",
+          "group": "navigation@1"
+        },
+        {
+          "command": "skilldock.refreshRepoSkills",
+          "when": "view == skilldock.repoSkills",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "skilldock.editSkill",
+          "when": "view == skilldock.library && viewItem == skill",
+          "group": "inline@1"
+        },
+        {
+          "command": "skilldock.importSkill",
+          "when": "view == skilldock.library && viewItem == skill",
+          "group": "inline@2"
+        },
+        {
+          "command": "skilldock.viewSkill",
+          "when": "viewItem == skill",
+          "group": "1_view@1"
+        },
+        {
+          "command": "skilldock.editSkill",
+          "when": "viewItem == skill",
+          "group": "1_view@2"
+        },
+        {
+          "command": "skilldock.duplicateSkill",
+          "when": "view == skilldock.library && viewItem == skill",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "skilldock.importSkill",
+          "when": "view == skilldock.library && viewItem == skill",
+          "group": "2_manage@2"
+        },
+        {
+          "command": "skilldock.importSkillFromRepo",
+          "when": "view == skilldock.repoSkills && viewItem == skill",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "skilldock.deleteSkill",
+          "when": "viewItem == skill",
+          "group": "3_danger@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SkillDock",
+      "properties": {
+        "skilldock.libraryPath": {
+          "type": "string",
+          "default": "",
+          "description": "%config.libraryPath.description%"
+        },
+        "skilldock.defaultTarget": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "cursor",
+            "codex",
+            "github"
+          ],
+          "default": "claude",
+          "description": "%config.defaultTarget.description%"
+        },
+        "skilldock.showRepoSkills": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.showRepoSkills.description%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run lint && npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "package": "npx @vscode/vsce package --allow-missing-repository",
+    "pretest": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "@vscode/vsce": "^3.2.0",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.1",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "yaml": "^2.3.0"
+  }
+}

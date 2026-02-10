@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+          cache-dependency-path: skilldock-vscode/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: skilldock-vscode
+
+      - name: Lint
+        run: npm run lint
+        working-directory: skilldock-vscode
+
+      - name: Compile
+        run: npm run compile
+        working-directory: skilldock-vscode
+
+      - name: Package
+        run: npx @vscode/vsce package --allow-missing-repository
+        working-directory: skilldock-vscode
+
+      - name: Upload VSIX
+        if: matrix.node-version == 20
+        uses: actions/upload-artifact@v4
+        with:
+          name: skill-dock-vsix
+          path: skilldock-vscode/*.vsix

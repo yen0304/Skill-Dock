@@ -1,0 +1,28 @@
+{
+  "displayName": "Skill Dock",
+  "description": "エージェントスキルをローカルで管理、閲覧、インポート。Claude、Cursor、Codexなどに対応。",
+
+  "viewsContainer.title": "Skill Dock",
+  "view.library.name": "スキルライブラリ",
+  "view.repoSkills.name": "リポジトリスキル",
+
+  "welcome.library": "ライブラリにスキルがありません。\n[新しいスキルを作成](command:skilldock.createSkill)\n[ライブラリフォルダを開く](command:skilldock.openLibraryFolder)",
+  "welcome.repoSkills": "このリポジトリにスキルがありません。\n[ライブラリからスキルをインポート](command:skilldock.importSkill)",
+
+  "command.createSkill": "新しいスキルを作成",
+  "command.editSkill": "スキルを編集",
+  "command.deleteSkill": "スキルを削除",
+  "command.importSkill": "スキルをリポジトリにインポート",
+  "command.importSkillFromRepo": "スキルをライブラリに保存",
+  "command.viewSkill": "スキルを表示",
+  "command.refreshLibrary": "ライブラリを更新",
+  "command.refreshRepoSkills": "リポジトリスキルを更新",
+  "command.openLibraryFolder": "ライブラリフォルダを開く",
+  "command.openManager": "スキルマネージャーを開く",
+  "command.duplicateSkill": "スキルを複製",
+  "command.searchSkills": "スキルを検索",
+
+  "config.libraryPath.description": "スキルライブラリのカスタムパス。デフォルトは ~/.skilldock/skills",
+  "config.defaultTarget.description": "スキルをリポジトリにインポートする際のデフォルトターゲット形式",
+  "config.showRepoSkills.description": "サイドバーにリポジトリスキルパネルを表示する"
+}

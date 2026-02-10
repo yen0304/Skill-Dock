@@ -1,0 +1,28 @@
+{
+  "displayName": "Skill Dock",
+  "description": "在本地管理、瀏覽和匯入 Agent Skills。支援 Claude、Cursor、Codex 等多種格式。",
+
+  "viewsContainer.title": "Skill Dock",
+  "view.library.name": "Skill 管理庫",
+  "view.repoSkills.name": "專案 Skills",
+
+  "welcome.library": "您的管理庫中尚無任何 Skill。\n[建立新 Skill](command:skilldock.createSkill)\n[開啟管理庫資料夾](command:skilldock.openLibraryFolder)",
+  "welcome.repoSkills": "此專案中尚無任何 Skill。\n[從管理庫匯入 Skill](command:skilldock.importSkill)",
+
+  "command.createSkill": "建立新 Skill",
+  "command.editSkill": "編輯 Skill",
+  "command.deleteSkill": "刪除 Skill",
+  "command.importSkill": "匯入 Skill 到專案",
+  "command.importSkillFromRepo": "儲存 Skill 到管理庫",
+  "command.viewSkill": "檢視 Skill",
+  "command.refreshLibrary": "重新整理管理庫",
+  "command.refreshRepoSkills": "重新整理專案 Skills",
+  "command.openLibraryFolder": "開啟管理庫資料夾",
+  "command.openManager": "開啟 Skill 管理器",
+  "command.duplicateSkill": "複製 Skill",
+  "command.searchSkills": "搜尋 Skills",
+
+  "config.libraryPath.description": "Skill 管理庫的自訂路徑。預設為 ~/.skilldock/skills",
+  "config.defaultTarget.description": "匯入 Skill 到專案時的預設目標格式",
+  "config.showRepoSkills.description": "在側邊欄顯示專案 Skills 面板"
+}
