@@ -103,12 +103,20 @@
   "Loading content...": "載入內容中...",
   "Select All": "全選",
   "Deselect All": "取消全選",
-  "GitHub API rate limit exceeded. Set a personal access token in Settings → skilldock.githubToken to increase the limit.": "GitHub API 速率限制已超過。請在設定 → skilldock.githubToken 中設定個人存取權杖以提高限制。",
+  "GitHub API rate limit exceeded. Run \"Set GitHub Token\" command to set a personal access token and increase the limit.": "GitHub API 速率限制已超過。請執行「設定 GitHub Token」指令以設定個人存取權杖並提高限制。",
   "Install Selected ({0})": "安裝已選（{0}）",
   "Installing skills...": "正在安裝 Skills...",
   "Installed {0} skill(s) to your library.": "已安裝 {0} 個 Skill 到管理庫。",
   "Name (A-Z)": "名稱（A-Z）",
   "Last Modified (Newest)": "最後修改（最新）",
   "Author (A-Z)": "作者（A-Z）",
-  "Select sort order": "選擇排序方式"
+  "Most Used": "最常安裝",
+  "Select sort order": "選擇排序方式",
+  "↑ Update": "↑ 更新",
+  "Set GitHub Token": "設定 GitHub Token",
+  "Clear GitHub Token": "清除 GitHub Token",
+  "GitHub token saved securely.": "GitHub Token 已安全儲存。",
+  "GitHub token cleared.": "GitHub Token 已清除。",
+  "Enter your GitHub personal access token (leave blank to clear):": "輸入您的 GitHub 個人存取權杖（留空以清除）：",
+  "Installed {0} time(s)": "已安裝 {0} 次"
 }

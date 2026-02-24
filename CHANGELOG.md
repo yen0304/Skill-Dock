@@ -5,6 +5,23 @@ All notable changes to the Skill Dock extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-02-24
+
+### Added
+
+- **Secure GitHub Token**: GitHub personal access token is now stored in VS Code's encrypted `SecretStorage` instead of plaintext settings. Use the new `Set GitHub Token` command to store your token securely. Existing tokens in settings are automatically migrated on first launch.
+- **Install statistics**: Tracks how many times each skill has been installed from the marketplace. The install count and timestamp are stored in `.stats.json` inside your library folder (not in SKILL.md). The count is shown in the skill tooltip in the library tree view.
+- **Version update notifications**: The marketplace now detects when an installed skill has a newer version available and shows a `↑ Update` button. Clicking it updates the skill silently (no confirmation dialog) and refreshes the button state.
+- **`Most Used` sort order**: New sort option in `Sort Library` — sorts skills by install count (descending), with name as tie-breaker.
+- **New commands**: `Set GitHub Token` (password input, saves securely) and `Clear GitHub Token`
+- **16 new tests** covering install stats, version map, silent update, and token resolution (281 → 297 total)
+
+### Changed
+
+- `skilldock.githubToken` setting **removed** — use the `Set GitHub Token` command instead. Tokens stored in the old setting are automatically migrated to SecretStorage on activation and the setting is cleared.
+- Rate limit error message updated to reference the new `Set GitHub Token` command instead of the removed settings path.
+- Library sort now accepts `mostUsed` as a valid value for `skilldock.librarySortBy`.
+
 ## [0.4.0] - 2026-02-11
 
 ### Added
@@ -92,6 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **i18n**: Multi-language support (English, Traditional Chinese, Japanese)
 - **Auto-detection**: Automatically scan and display skills in opened repositories
 
+[0.5.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.5.0
 [0.4.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.4.0
 [0.3.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.3.0
 [0.2.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.2.0

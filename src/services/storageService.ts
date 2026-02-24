@@ -5,6 +5,14 @@ import * as os from 'os';
 import { Skill, SkillMetadata } from '../models/skill';
 import { parseFrontmatter, serializeSkill } from '../utils/skillParser';
 
+interface SkillStats {
+  installCount: number;
+  lastInstalledAt: number;
+  installedVersion?: string;
+}
+
+type StatsRecord = Record<string, SkillStats>;
+
 /**
  * Check if a path exists (async replacement for fs.existsSync)
  */
@@ -88,7 +96,63 @@ export class StorageService {
       }
     }
 
+    // Merge install stats into each skill
+    const stats = await this._readStats();
+    for (const skill of skills) {
+      const s = stats[skill.id];
+      if (s) {
+        skill.installCount = s.installCount;
+        skill.lastInstalledAt = s.lastInstalledAt;
+      }
+    }
+
     return skills.sort((a, b) => a.metadata.name.localeCompare(b.metadata.name));
+  }
+
+  // ------------------------------------------------------------------
+  // Install stats
+  // ------------------------------------------------------------------
+
+  private get _statsPath(): string {
+    return path.join(this._libraryPath, '.stats.json');
+  }
+
+  private async _readStats(): Promise<StatsRecord> {
+    try {
+      const raw = await fs.readFile(this._statsPath, 'utf-8');
+      return JSON.parse(raw) as StatsRecord;
+    } catch {
+      return {};
+    }
+  }
+
+  private async _writeStats(stats: StatsRecord): Promise<void> {
+    await this.ensureDirectory(this._libraryPath);
+    await fs.writeFile(this._statsPath, JSON.stringify(stats, null, 2), 'utf-8');
+  }
+
+  /** Record a marketplace install for a skill, incrementing the count and updating the version. */
+  async recordInstall(id: string, version?: string): Promise<void> {
+    const stats = await this._readStats();
+    const existing = stats[id];
+    stats[id] = {
+      installCount: (existing?.installCount ?? 0) + 1,
+      lastInstalledAt: Date.now(),
+      installedVersion: version ?? existing?.installedVersion,
+    };
+    await this._writeStats(stats);
+  }
+
+  /** Return a map of skillId → installedVersion for all tracked skills. */
+  async getInstalledVersions(): Promise<Map<string, string>> {
+    const stats = await this._readStats();
+    const map = new Map<string, string>();
+    for (const [id, s] of Object.entries(stats)) {
+      if (s.installedVersion) {
+        map.set(id, s.installedVersion);
+      }
+    }
+    return map;
   }
 
   /**

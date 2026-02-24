@@ -29,11 +29,12 @@
   "command.addMarketplaceSource": "Add Marketplace Source",
   "command.removeMarketplaceSource": "Remove Marketplace Source",
   "command.sortLibrary": "Sort Library",
+  "command.setGithubToken": "Set GitHub Token",
+  "command.clearGithubToken": "Clear GitHub Token",
 
   "config.libraryPath.description": "Custom path for the skill library. Defaults to ~/.skilldock/skills",
   "config.defaultTarget.description": "Default target format when importing skills to a repo",
   "config.showRepoSkills.description": "Show the Repo Skills panel in the sidebar",
   "config.marketplaceSources.description": "Additional GitHub repository URLs to scan for agent skills in the Marketplace",
-  "config.githubToken.description": "GitHub personal access token for API requests. Increases rate limit from 60 to 5,000 requests per hour.",
-  "config.librarySortBy.description": "Sort order for the skill library tree view (name, lastModified, author)"
+  "config.librarySortBy.description": "Sort order for the skill library tree view (name, lastModified, author, mostUsed)"
 }

@@ -339,6 +339,209 @@ describe('MarketplaceService', () => {
   });
 
   // ----------------------------------------------------------
+  // recordInstall called by installSkill
+  // ----------------------------------------------------------
+  describe('installSkill stats integration', () => {
+    it('should record install stats after installing a new skill', async () => {
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'stats-skill',
+        metadata: { name: 'Stats Skill', description: 'Has stats', version: '1.2.3' },
+        body: '# Stats',
+        repoPath: 'skills/stats-skill/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      await service.installSkill(remote);
+
+      const versions = await service.getInstalledVersionMap();
+      expect(versions.get('stats-skill')).toBe('1.2.3');
+    });
+
+    it('should record install stats when overwriting an existing skill', async () => {
+      const skillDir = path.join(tmpDir, 'overwrite-skill');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        '---\nname: Old\ndescription: Old desc\n---\n'
+      );
+
+      const vscodeModule = await import('vscode');
+      vi.mocked(vscodeModule.window.showWarningMessage).mockResolvedValue('Overwrite' as any);
+
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'overwrite-skill',
+        metadata: { name: 'New', description: 'New desc', version: '2.0.0' },
+        body: '# New',
+        repoPath: 'skills/overwrite-skill/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      await service.installSkill(remote);
+
+      const versions = await service.getInstalledVersionMap();
+      expect(versions.get('overwrite-skill')).toBe('2.0.0');
+    });
+
+    it('should not record stats when user cancels overwrite', async () => {
+      const skillDir = path.join(tmpDir, 'no-overwrite');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        '---\nname: Keep\ndescription: Keep\n---\n'
+      );
+
+      const vscodeModule = await import('vscode');
+      vi.mocked(vscodeModule.window.showWarningMessage).mockResolvedValue('Cancel' as any);
+
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'no-overwrite',
+        metadata: { name: 'New', description: 'New', version: '3.0.0' },
+        body: '# New',
+        repoPath: 'skills/no-overwrite/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      await service.installSkill(remote);
+
+      const versions = await service.getInstalledVersionMap();
+      expect(versions.has('no-overwrite')).toBe(false);
+    });
+  });
+
+  // ----------------------------------------------------------
+  // getInstalledVersionMap
+  // ----------------------------------------------------------
+  describe('getInstalledVersionMap', () => {
+    it('should return empty map when no skills have been installed via marketplace', async () => {
+      const map = await service.getInstalledVersionMap();
+      expect(map.size).toBe(0);
+    });
+
+    it('should return installed versions after installs', async () => {
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'ver-skill',
+        metadata: { name: 'Ver', description: '', version: '0.5.0' },
+        body: '',
+        repoPath: 'skills/ver-skill/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      await service.installSkill(remote);
+
+      const map = await service.getInstalledVersionMap();
+      expect(map.get('ver-skill')).toBe('0.5.0');
+    });
+  });
+
+  // ----------------------------------------------------------
+  // updateSkillSilently
+  // ----------------------------------------------------------
+  describe('updateSkillSilently', () => {
+    it('should update the skill and record install without showing a dialog', async () => {
+      await storageService.createSkill('silent-skill', { name: 'Old', description: 'v1' }, '# Old');
+
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'silent-skill',
+        metadata: { name: 'New', description: 'v2', version: '2.0.0' },
+        body: '# New',
+        repoPath: 'skills/silent-skill/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      const vscodeModule = await import('vscode');
+      vi.mocked(vscodeModule.window.showWarningMessage).mockClear();
+      await service.updateSkillSilently(remote);
+
+      // Skill content updated
+      const skill = await storageService.readSkill('silent-skill');
+      expect(skill!.metadata.name).toBe('New');
+      expect(skill!.metadata.description).toBe('v2');
+
+      // Stats recorded
+      const versions = await service.getInstalledVersionMap();
+      expect(versions.get('silent-skill')).toBe('2.0.0');
+
+      // No warning dialog shown
+      expect(vscodeModule.window.showWarningMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  // ----------------------------------------------------------
+  // Token resolution (getToken callback)
+  // ----------------------------------------------------------
+  describe('getToken callback', () => {
+    afterEach(() => {
+      vi.mocked(https.get as any).mockReset();
+    });
+
+    it('should use the token from getToken callback in request headers', async () => {
+      const mockGetToken = vi.fn().mockResolvedValue('secret-token-abc');
+      const serviceWithToken = new MarketplaceService(storageService, mockGetToken);
+
+      let capturedHeaders: Record<string, string> = {};
+      vi.mocked(https.get as any).mockImplementation(
+        (_url: string, opts: { headers: Record<string, string> }, cb: (res: any) => void) => {
+          capturedHeaders = opts.headers;
+          const res = Object.assign(new EventEmitter(), {
+            statusCode: 200, headers: {}, resume: vi.fn(),
+          });
+          const req = Object.assign(new EventEmitter(), { end: vi.fn() });
+          process.nextTick(() => {
+            cb(res);
+            res.emit('data', Buffer.from(JSON.stringify({ tree: [] })));
+            res.emit('end');
+          });
+          return req;
+        }
+      );
+
+      const testSource: MarketplaceSource = {
+        id: 'tok/test', owner: 'tok', repo: 'test', branch: 'main', path: '', label: 'Tok', isBuiltin: false,
+      };
+
+      await serviceWithToken.fetchSource(testSource);
+
+      expect(mockGetToken).toHaveBeenCalled();
+      expect(capturedHeaders['Authorization']).toBe('token secret-token-abc');
+    });
+
+    it('should send no Authorization header when getToken returns undefined', async () => {
+      const mockGetToken = vi.fn().mockResolvedValue(undefined);
+      const serviceNoToken = new MarketplaceService(storageService, mockGetToken);
+
+      let capturedHeaders: Record<string, string> = {};
+      vi.mocked(https.get as any).mockImplementation(
+        (_url: string, opts: { headers: Record<string, string> }, cb: (res: any) => void) => {
+          capturedHeaders = opts.headers;
+          const res = Object.assign(new EventEmitter(), {
+            statusCode: 200, headers: {}, resume: vi.fn(),
+          });
+          const req = Object.assign(new EventEmitter(), { end: vi.fn() });
+          process.nextTick(() => {
+            cb(res);
+            res.emit('data', Buffer.from(JSON.stringify({ tree: [] })));
+            res.emit('end');
+          });
+          return req;
+        }
+      );
+
+      const testSource: MarketplaceSource = {
+        id: 'no/tok', owner: 'no', repo: 'tok', branch: 'main', path: '', label: 'No', isBuiltin: false,
+      };
+
+      await serviceNoToken.fetchSource(testSource);
+
+      expect(capturedHeaders['Authorization']).toBeUndefined();
+    });
+  });
+
+  // ----------------------------------------------------------
   // Cache behavior
   // ----------------------------------------------------------
   describe('cache', () => {

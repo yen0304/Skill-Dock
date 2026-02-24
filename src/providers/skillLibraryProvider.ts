@@ -27,6 +27,9 @@ export class SkillTreeItem extends vscode.TreeItem {
     if (skill.metadata.tags && skill.metadata.tags.length > 0) {
       this.tooltip.appendMarkdown(`*${vscode.l10n.t('Tags:')}* ${skill.metadata.tags.join(', ')}\n\n`);
     }
+    if (skill.installCount !== undefined && skill.installCount > 0) {
+      this.tooltip.appendMarkdown(`*${vscode.l10n.t('Installed {0} time(s)', skill.installCount)}*\n\n`);
+    }
 
     this.description = skill.metadata.description.length > 60
       ? skill.metadata.description.slice(0, 57) + '...'
@@ -171,6 +174,9 @@ export class SkillLibraryProvider implements vscode.TreeDataProvider<SkillTreeIt
           return b.lastModified - a.lastModified;
         case 'author':
           return (a.metadata.author ?? '').localeCompare(b.metadata.author ?? '')
+            || a.metadata.name.localeCompare(b.metadata.name);
+        case 'mostUsed':
+          return ((b.installCount ?? 0) - (a.installCount ?? 0))
             || a.metadata.name.localeCompare(b.metadata.name);
         default: // 'name'
           return a.metadata.name.localeCompare(b.metadata.name);

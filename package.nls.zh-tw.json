@@ -29,11 +29,12 @@
   "command.addMarketplaceSource": "新增市集來源",
   "command.removeMarketplaceSource": "移除市集來源",
   "command.sortLibrary": "排序管理庫",
+  "command.setGithubToken": "設定 GitHub Token",
+  "command.clearGithubToken": "清除 GitHub Token",
 
   "config.libraryPath.description": "Skill 管理庫的自訂路徑。預設為 ~/.skilldock/skills",
   "config.defaultTarget.description": "匯入 Skill 到專案時的預設目標格式",
   "config.showRepoSkills.description": "在側邊欄顯示專案 Skills 面板",
   "config.marketplaceSources.description": "在市集中掃描 Agent Skills 的額外 GitHub 儲存庫 URL",
-  "config.githubToken.description": "GitHub 個人存取權杖，用於 API 請求。可將速率限制從每小時 60 次提高到 5,000 次。",
-  "config.librarySortBy.description": "Skill 管理庫樹狀圖的排序方式（name、lastModified、author）"
+  "config.librarySortBy.description": "Skill 管理庫樹狀圖的排序方式（name、lastModified、author、mostUsed）"
 }

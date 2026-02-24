@@ -10,13 +10,24 @@ import { MarketplacePanel } from './views/marketplacePanel';
 import { MarketplaceTreeProvider, MarketplaceSourceItem } from './providers/marketplaceTreeProvider';
 import { Skill } from './models/skill';
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   console.log('SkillDock: Activating extension');
 
   // Initialize services
   const storageService = new StorageService();
   const importExportService = new ImportExportService(storageService);
-  const marketplaceService = new MarketplaceService(storageService);
+  const marketplaceService = new MarketplaceService(
+    storageService,
+    () => context.secrets.get('skilldock.githubToken'),
+  );
+
+  // Migrate legacy plaintext token from settings to SecretStorage
+  const config = vscode.workspace.getConfiguration('skilldock');
+  const oldToken = config.get<string>('githubToken');
+  if (oldToken?.trim()) {
+    await context.secrets.store('skilldock.githubToken', oldToken.trim());
+    await config.update('githubToken', undefined, vscode.ConfigurationTarget.Global);
+  }
 
   // Initialize tree view providers
   const libraryProvider = new SkillLibraryProvider(storageService);
@@ -284,6 +295,32 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Set GitHub token (stored securely in SecretStorage)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('skilldock.setGithubToken', async () => {
+      const value = await vscode.window.showInputBox({
+        prompt: vscode.l10n.t('Enter your GitHub personal access token (leave blank to clear):'),
+        password: true,
+      });
+      if (value === undefined) { return; } // user cancelled
+      if (value.trim()) {
+        await context.secrets.store('skilldock.githubToken', value.trim());
+        vscode.window.showInformationMessage(vscode.l10n.t('GitHub token saved securely.'));
+      } else {
+        await context.secrets.delete('skilldock.githubToken');
+        vscode.window.showInformationMessage(vscode.l10n.t('GitHub token cleared.'));
+      }
+    })
+  );
+
+  // Clear GitHub token
+  context.subscriptions.push(
+    vscode.commands.registerCommand('skilldock.clearGithubToken', async () => {
+      await context.secrets.delete('skilldock.githubToken');
+      vscode.window.showInformationMessage(vscode.l10n.t('GitHub token cleared.'));
+    })
+  );
+
   // Sort library
   context.subscriptions.push(
     vscode.commands.registerCommand('skilldock.sortLibrary', async () => {
@@ -292,6 +329,7 @@ export function activate(context: vscode.ExtensionContext) {
         { label: vscode.l10n.t('Name (A-Z)'), value: 'name' },
         { label: vscode.l10n.t('Last Modified (Newest)'), value: 'lastModified' },
         { label: vscode.l10n.t('Author (A-Z)'), value: 'author' },
+        { label: vscode.l10n.t('Most Used'), value: 'mostUsed' },
       ].map((i) => ({ ...i, description: i.value === current ? '✓' : '' }));
 
       const selected = await vscode.window.showQuickPick(items, {

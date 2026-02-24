@@ -33,7 +33,10 @@ interface GitTreeResponse {
 export class MarketplaceService {
   private _cache = new Map<string, CacheEntry<RemoteSkill[]>>();
 
-  constructor(private storageService: StorageService) {}
+  constructor(
+    private storageService: StorageService,
+    private getToken?: () => Thenable<string | undefined>,
+  ) {}
 
   // ------------------------------------------------------------------
   // Source management
@@ -108,8 +111,11 @@ export class MarketplaceService {
       }
     }
 
+    // Resolve token once per fetch to keep HTTP helpers sync
+    const token = await this._resolveToken();
+
     // 1. Get the repository tree
-    const treePaths = await this._fetchTree(source);
+    const treePaths = await this._fetchTree(source, token);
 
     // 2. Find SKILL.md files
     const skillMdPaths = treePaths.filter((p) => {
@@ -125,7 +131,7 @@ export class MarketplaceService {
 
     // 3. Fetch each SKILL.md content
     const results = await Promise.allSettled(
-      filtered.map((mdPath) => this._fetchSkillMd(source, mdPath))
+      filtered.map((mdPath) => this._fetchSkillMd(source, mdPath, token))
     );
 
     const skills: RemoteSkill[] = [];
@@ -159,6 +165,18 @@ export class MarketplaceService {
     } else {
       await this.storageService.createSkill(remote.id, remote.metadata, remote.body);
     }
+    await this.storageService.recordInstall(remote.id, remote.metadata.version);
+  }
+
+  /** Return a map of skillId → installedVersion from the stats file. */
+  async getInstalledVersionMap(): Promise<Map<string, string>> {
+    return this.storageService.getInstalledVersions();
+  }
+
+  /** Update a skill silently (no overwrite dialog) and record the install stat. */
+  async updateSkillSilently(remote: RemoteSkill): Promise<void> {
+    await this.storageService.updateSkill(remote.id, remote.metadata, remote.body);
+    await this.storageService.recordInstall(remote.id, remote.metadata.version);
   }
 
   /** Check which remote skill IDs are already installed locally. */
@@ -176,10 +194,22 @@ export class MarketplaceService {
   // GitHub API helpers
   // ------------------------------------------------------------------
 
+  /** Resolve the GitHub token: try SecretStorage callback first, fall back to config. */
+  private async _resolveToken(): Promise<string | undefined> {
+    if (this.getToken) {
+      const t = await this.getToken();
+      if (t?.trim()) { return t.trim(); }
+    }
+    // Migration fallback: read from config if SecretStorage callback not provided or returned empty
+    const config = vscode.workspace.getConfiguration('skilldock');
+    const legacy = config.get<string>('githubToken');
+    return legacy?.trim() || undefined;
+  }
+
   /** Fetch the recursive tree listing for a repo. Returns flat file paths. */
-  private async _fetchTree(source: MarketplaceSource): Promise<string[]> {
+  private async _fetchTree(source: MarketplaceSource, token?: string): Promise<string[]> {
     const url = `https://api.github.com/repos/${source.owner}/${source.repo}/git/trees/${source.branch}?recursive=1`;
-    const json = await this._httpGetJson(url) as GitTreeResponse;
+    const json = await this._httpGetJson(url, token) as GitTreeResponse;
 
     if (!json.tree || !Array.isArray(json.tree)) {
       return [];
@@ -193,10 +223,11 @@ export class MarketplaceService {
   /** Fetch raw content of a SKILL.md and return a RemoteSkill. */
   private async _fetchSkillMd(
     source: MarketplaceSource,
-    repoPath: string
+    repoPath: string,
+    token?: string,
   ): Promise<RemoteSkill | null> {
     const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.branch}/${repoPath}`;
-    const content = await this._httpGetText(rawUrl);
+    const content = await this._httpGetText(rawUrl, token);
 
     const { metadata, body } = parseFrontmatter(content);
     if (!metadata.name) {
@@ -229,14 +260,12 @@ export class MarketplaceService {
   // HTTP helpers (using Node https module to avoid type issues)
   // ------------------------------------------------------------------
 
-  /** Return HTTP request headers, including GitHub token if configured. */
-  private _getHeaders(accept?: string): Record<string, string> {
+  /** Return HTTP request headers, optionally including a GitHub token. */
+  private _getHeaders(accept?: string, token?: string): Record<string, string> {
     const headers: Record<string, string> = { 'User-Agent': 'SkillDock-VSCode' };
     if (accept) { headers['Accept'] = accept; }
-    const config = vscode.workspace.getConfiguration('skilldock');
-    const token = config.get<string>('githubToken');
-    if (token && token.trim()) {
-      headers['Authorization'] = `token ${token.trim()}`;
+    if (token) {
+      headers['Authorization'] = `token ${token}`;
     }
     return headers;
   }
@@ -245,18 +274,18 @@ export class MarketplaceService {
   private _httpError(statusCode: number, url: string, rateLimitRemaining?: string | string[]): Error {
     if (statusCode === 403 && rateLimitRemaining === '0') {
       return new Error(vscode.l10n.t(
-        'GitHub API rate limit exceeded. Set a personal access token in Settings → skilldock.githubToken to increase the limit.'
+        'GitHub API rate limit exceeded. Run "Set GitHub Token" command to set a personal access token and increase the limit.'
       ));
     }
     return new Error(`HTTP ${statusCode} for ${url}`);
   }
 
   /** Perform an HTTPS GET and return parsed JSON. */
-  private _httpGetJson(url: string): Promise<unknown> {
+  private _httpGetJson(url: string, token?: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
-      const req = https.get(url, { headers: this._getHeaders('application/json') }, (res) => {
+      const req = https.get(url, { headers: this._getHeaders('application/json', token) }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          this._httpGetJson(res.headers.location).then(resolve, reject);
+          this._httpGetJson(res.headers.location, token).then(resolve, reject);
           return;
         }
         if (res.statusCode && res.statusCode >= 400) {
@@ -281,11 +310,11 @@ export class MarketplaceService {
   }
 
   /** Perform an HTTPS GET and return text. */
-  private _httpGetText(url: string): Promise<string> {
+  private _httpGetText(url: string, token?: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const req = https.get(url, { headers: this._getHeaders() }, (res) => {
+      const req = https.get(url, { headers: this._getHeaders(undefined, token) }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          this._httpGetText(res.headers.location).then(resolve, reject);
+          this._httpGetText(res.headers.location, token).then(resolve, reject);
           return;
         }
         if (res.statusCode && res.statusCode >= 400) {

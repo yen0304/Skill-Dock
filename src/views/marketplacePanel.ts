@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { MarketplaceSource, RemoteSkill } from '../models/skill';
 import { MarketplaceService } from '../services/marketplaceService';
 
 /** Messages sent from the extension host to the marketplace webview */
@@ -19,6 +18,7 @@ function getMarketplaceStrings() {
     noSkillsHint: vscode.l10n.t('Try refreshing or adding a new source.'),
     installBtn: vscode.l10n.t('Install'),
     installedLabel: vscode.l10n.t('Installed'),
+    updateBtn: vscode.l10n.t('↑ Update'),
     refreshBtn: vscode.l10n.t('Refresh'),
     addSourceBtn: vscode.l10n.t('Add Source'),
     removeSourceBtn: vscode.l10n.t('Remove'),
@@ -65,6 +65,9 @@ export class MarketplacePanel {
             break;
           case 'install':
             await this._handleInstall(msg.sourceId, msg.repoPath);
+            break;
+          case 'update':
+            await this._handleUpdate(msg.sourceId, msg.repoPath);
             break;
           case 'preview':
             await this._handlePreview(msg.sourceId, msg.repoPath);
@@ -132,27 +135,35 @@ export class MarketplacePanel {
     try {
       this._postMessage({ command: 'loading' });
 
-      const [skills, installedIds] = await Promise.all([
+      const [skills, installedIds, installedVersions] = await Promise.all([
         this.marketplaceService.fetchAll(force),
         this.marketplaceService.getInstalledIds(),
+        this.marketplaceService.getInstalledVersionMap(),
       ]);
 
       const sources = this.marketplaceService.getSources();
 
       this._postMessage({
         command: 'updateSkills',
-        skills: skills.map((s) => ({
-          id: s.id,
-          name: s.metadata.name,
-          description: s.metadata.description,
-          author: s.metadata.author || '',
-          version: s.metadata.version || '',
-          tags: s.metadata.tags || [],
-          sourceId: s.source.id,
-          sourceLabel: s.source.label,
-          repoPath: s.repoPath,
-          installed: installedIds.has(s.id),
-        })),
+        skills: skills.map((s) => {
+          const installed = installedIds.has(s.id);
+          const remoteVersion = s.metadata.version;
+          const localVersion = installedVersions.get(s.id);
+          const hasUpdate = installed && !!remoteVersion && !!localVersion && remoteVersion !== localVersion;
+          return {
+            id: s.id,
+            name: s.metadata.name,
+            description: s.metadata.description,
+            author: s.metadata.author || '',
+            version: s.metadata.version || '',
+            tags: s.metadata.tags || [],
+            sourceId: s.source.id,
+            sourceLabel: s.source.label,
+            repoPath: s.repoPath,
+            installed,
+            hasUpdate,
+          };
+        }),
         sources: sources.map((s) => ({
           id: s.id,
           label: s.label,
@@ -187,11 +198,62 @@ export class MarketplacePanel {
         vscode.l10n.t('Installed "{0}" to your library.', skill.metadata.name)
       );
 
-      // Re-send installed state
-      const installedIds = await this.marketplaceService.getInstalledIds();
+      // Re-send installed state + update flags
+      const [installedIds, installedVersions] = await Promise.all([
+        this.marketplaceService.getInstalledIds(),
+        this.marketplaceService.getInstalledVersionMap(),
+      ]);
+      const hasUpdateMap: Record<string, boolean> = {};
+      for (const s of skills) {
+        const installed = installedIds.has(s.id);
+        const remoteVersion = s.metadata.version;
+        const localVersion = installedVersions.get(s.id);
+        hasUpdateMap[s.id] = installed && !!remoteVersion && !!localVersion && remoteVersion !== localVersion;
+      }
       this._postMessage({
         command: 'updateInstalled',
         installedIds: [...installedIds],
+        hasUpdateMap,
+      });
+    } catch (err) {
+      vscode.window.showErrorMessage(
+        vscode.l10n.t('Install failed: {0}', String(err))
+      );
+    }
+  }
+
+  private async _handleUpdate(sourceId: string, repoPath: string): Promise<void> {
+    try {
+      const skills = await this.marketplaceService.fetchAll(false);
+      const skill = skills.find(
+        (s) => s.source.id === sourceId && s.repoPath === repoPath
+      );
+      if (!skill) { return; }
+
+      // Silently overwrite — user clicked "↑ Update" intentionally
+      await this.marketplaceService.updateSkillSilently(skill);
+      this.onRefresh();
+
+      vscode.window.showInformationMessage(
+        vscode.l10n.t('Installed "{0}" to your library.', skill.metadata.name)
+      );
+
+      // Re-send installed state + update flags (hasUpdate should now be false for this skill)
+      const [installedIds, installedVersions] = await Promise.all([
+        this.marketplaceService.getInstalledIds(),
+        this.marketplaceService.getInstalledVersionMap(),
+      ]);
+      const hasUpdateMap: Record<string, boolean> = {};
+      for (const s of skills) {
+        const installed = installedIds.has(s.id);
+        const remoteVersion = s.metadata.version;
+        const localVersion = installedVersions.get(s.id);
+        hasUpdateMap[s.id] = installed && !!remoteVersion && !!localVersion && remoteVersion !== localVersion;
+      }
+      this._postMessage({
+        command: 'updateInstalled',
+        installedIds: [...installedIds],
+        hasUpdateMap,
       });
     } catch (err) {
       vscode.window.showErrorMessage(
@@ -472,6 +534,12 @@ export class MarketplacePanel {
       background: transparent; color: var(--success-fg);
       cursor: default; font-weight: 600;
     }
+    .update-btn {
+      padding: 4px 12px; border: none; border-radius: 4px; cursor: pointer;
+      font-family: inherit; font-size: 0.85em;
+      background: var(--vscode-charts-yellow, #e9c46a); color: #1e1e1e;
+    }
+    .update-btn:hover { opacity: 0.85; }
 
     /* Empty / loading */
     .empty-state, .loading-state {
@@ -593,6 +661,7 @@ export class MarketplacePanel {
     const loc = ${JSON.stringify({
       installBtn: t.installBtn,
       installedLabel: t.installedLabel,
+      updateBtn: t.updateBtn,
       removeSourceBtn: t.removeSourceBtn,
       skillUnit: t.skillUnit,
       sourceLabel: t.sourceLabel,
@@ -605,6 +674,7 @@ export class MarketplacePanel {
     let allSkills = [];
     let allSources = [];
     let installedSet = new Set();
+    let hasUpdateMap = {};
     let activeSourceIds = new Set();
     let searchQuery = '';
 
@@ -675,6 +745,8 @@ export class MarketplacePanel {
           allSkills = msg.skills;
           allSources = msg.sources;
           installedSet = new Set(msg.skills.filter(function(s) { return s.installed; }).map(function(s) { return s.id; }));
+          hasUpdateMap = {};
+          msg.skills.forEach(function(s) { if (s.hasUpdate) { hasUpdateMap[s.id] = true; } });
           // Sync activeSourceIds: auto-activate new sources, prune removed ones
           var newSourceIds = new Set(allSources.map(function(s) { return s.id; }));
           if (activeSourceIds.size === 0 && prevSourceIds.size === 0) {
@@ -696,6 +768,7 @@ export class MarketplacePanel {
           break;
         case 'updateInstalled':
           installedSet = new Set(msg.installedIds);
+          if (msg.hasUpdateMap) { hasUpdateMap = msg.hasUpdateMap; }
           renderSkills();
           // Also update detail view install button if open
           if (currentPreviewSkill) {
@@ -813,6 +886,7 @@ export class MarketplacePanel {
 
       skillList.innerHTML = filtered.map(function(skill) {
         var isInstalled = installedSet.has(skill.id);
+        var needsUpdate = !!hasUpdateMap[skill.id];
         var tags = (skill.tags || []).map(function(t) {
           return '<span class="tag">' + escapeHtml(t) + '</span>';
         }).join('');
@@ -824,6 +898,13 @@ export class MarketplacePanel {
 
         var btnClass = isInstalled ? 'install-btn installed' : 'install-btn';
         var btnText = isInstalled ? '\u2713 ' + escapeHtml(loc.installedLabel) : escapeHtml(loc.installBtn);
+
+        var updateBtnHtml = needsUpdate
+          ? '<button class="update-btn"' +
+              ' data-source-id="' + escapeHtml(skill.sourceId) + '"' +
+              ' data-repo-path="' + escapeHtml(skill.repoPath) + '"' +
+            '>' + escapeHtml(loc.updateBtn) + '</button>'
+          : '';
 
         return '<li class="skill-item"' +
           ' data-source-id="' + escapeHtml(skill.sourceId) + '"' +
@@ -844,6 +925,7 @@ export class MarketplacePanel {
               ' data-repo-path="' + escapeHtml(skill.repoPath) + '"' +
               (isInstalled ? ' disabled' : '') +
             '>' + btnText + '</button>' +
+            updateBtnHtml +
           '</div>' +
         '</li>';
       }).join('');
@@ -868,6 +950,17 @@ export class MarketplacePanel {
           var repoPath = btn.getAttribute('data-repo-path');
           if (sourceId && repoPath) {
             vscode.postMessage({ command: 'install', sourceId: sourceId, repoPath: repoPath });
+          }
+        });
+      });
+
+      skillList.querySelectorAll('.update-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var sourceId = btn.getAttribute('data-source-id');
+          var repoPath = btn.getAttribute('data-repo-path');
+          if (sourceId && repoPath) {
+            vscode.postMessage({ command: 'update', sourceId: sourceId, repoPath: repoPath });
           }
         });
       });

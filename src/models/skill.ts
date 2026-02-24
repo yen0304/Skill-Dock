@@ -28,6 +28,10 @@ export interface Skill {
   lastModified: number;
   /** Optional: additional files in the skill directory */
   additionalFiles?: string[];
+  /** Number of times the skill has been installed from the marketplace */
+  installCount?: number;
+  /** Timestamp of the last marketplace install */
+  lastInstalledAt?: number;
 }
 
 /**

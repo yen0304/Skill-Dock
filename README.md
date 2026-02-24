@@ -67,6 +67,14 @@ Import skills from your library into the current workspace. Choose the target fo
 
 Multi-select import supported. Save repo skills back to your library.
 
+### Install Statistics & Sort by Most Used
+
+Every time you install a skill from the marketplace, an install count is recorded locally (`.stats.json` in your library folder). Hover over a skill in the library tree to see how many times it has been installed. Sort your library by **Most Used** to surface your most-referenced skills.
+
+### Secure GitHub Token
+
+GitHub personal access tokens are stored in VS Code's encrypted **SecretStorage** (never in plaintext settings). Use `Skill Dock: Set GitHub Token` to store your token — it raises the GitHub API rate limit from 60 to 5,000 requests per hour.
+
 ### Skill Editor
 
 Visual form-based editor for creating and editing skills — metadata fields (name, description, author, version, license, tags) and Markdown body.
@@ -103,7 +111,9 @@ All commands are available via `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) under 
 | `Skill Dock: Add Marketplace Source` | Add a custom GitHub repository as a skill source |
 | `Skill Dock: Remove Marketplace Source` | Remove a custom marketplace source |
 | `Skill Dock: Add to Library` | Save a repo skill to your library (inline button) |
-| `Skill Dock: Sort Library` | Change library sort order (name / last modified / author) |
+| `Skill Dock: Sort Library` | Change library sort order (name / last modified / author / most used) |
+| `Skill Dock: Set GitHub Token` | Store a GitHub personal access token securely (raises API rate limit) |
+| `Skill Dock: Clear GitHub Token` | Remove the stored GitHub token |
 
 ---
 
@@ -115,8 +125,9 @@ All commands are available via `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) under 
 | `skilldock.defaultTarget` | `claude` | Default target format when importing |
 | `skilldock.showRepoSkills` | `true` | Show the Repo Skills panel |
 | `skilldock.marketplaceSources` | `[]` | Custom marketplace source URLs |
-| `skilldock.githubToken` | `""` | GitHub personal access token (raises rate limit to 5,000/hr) |
-| `skilldock.librarySortBy` | `"name"` | Library sort order: `name`, `lastModified`, or `author` |
+| `skilldock.librarySortBy` | `"name"` | Library sort order: `name`, `lastModified`, `author`, or `mostUsed` |
+
+> **GitHub Token**: Use the `Set GitHub Token` command to store your token securely in VS Code's encrypted credential store. It is no longer stored as a plaintext setting.
 
 ---
 

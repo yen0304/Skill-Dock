@@ -290,6 +290,81 @@ describe('StorageService', () => {
     });
   });
 
+  // ------------------------------------------------------------------
+  // Install stats
+  // ------------------------------------------------------------------
+  describe('recordInstall / getInstalledVersions / listSkills stats merge', () => {
+    it('recordInstall should create a stats entry on first call', async () => {
+      await service.recordInstall('my-skill', '1.0.0');
+
+      const versions = await service.getInstalledVersions();
+      expect(versions.get('my-skill')).toBe('1.0.0');
+    });
+
+    it('recordInstall should increment installCount on subsequent calls', async () => {
+      await service.recordInstall('counter-skill', '1.0.0');
+      await service.recordInstall('counter-skill', '1.0.0');
+      await service.recordInstall('counter-skill', '2.0.0');
+
+      // Read raw stats to verify count
+      const statsPath = (service as any)._statsPath;
+      const raw = JSON.parse(fs.readFileSync(statsPath, 'utf-8'));
+      expect(raw['counter-skill'].installCount).toBe(3);
+      expect(raw['counter-skill'].installedVersion).toBe('2.0.0');
+    });
+
+    it('recordInstall without version should preserve existing version', async () => {
+      await service.recordInstall('versioned', '1.5.0');
+      await service.recordInstall('versioned'); // no version
+
+      const versions = await service.getInstalledVersions();
+      expect(versions.get('versioned')).toBe('1.5.0');
+    });
+
+    it('getInstalledVersions should return empty map when no stats file', async () => {
+      const versions = await service.getInstalledVersions();
+      expect(versions.size).toBe(0);
+    });
+
+    it('getInstalledVersions should not include skills without a version', async () => {
+      await service.recordInstall('no-version'); // no version arg
+
+      const versions = await service.getInstalledVersions();
+      expect(versions.has('no-version')).toBe(false);
+    });
+
+    it('getInstalledVersions should return all tracked id→version pairs', async () => {
+      await service.recordInstall('skill-a', '1.0.0');
+      await service.recordInstall('skill-b', '2.3.4');
+
+      const versions = await service.getInstalledVersions();
+      expect(versions.get('skill-a')).toBe('1.0.0');
+      expect(versions.get('skill-b')).toBe('2.3.4');
+      expect(versions.size).toBe(2);
+    });
+
+    it('listSkills should merge installCount and lastInstalledAt into skills', async () => {
+      await service.createSkill('tracked-skill', { name: 'Tracked', description: '' }, '');
+      await service.recordInstall('tracked-skill', '1.0.0');
+      await service.recordInstall('tracked-skill', '1.0.0');
+
+      const skills = await service.listSkills();
+      const skill = skills.find(s => s.id === 'tracked-skill');
+      expect(skill).toBeDefined();
+      expect(skill!.installCount).toBe(2);
+      expect(skill!.lastInstalledAt).toBeTypeOf('number');
+    });
+
+    it('listSkills should leave installCount undefined for skills with no stats', async () => {
+      await service.createSkill('untracked', { name: 'Untracked', description: '' }, '');
+
+      const skills = await service.listSkills();
+      const skill = skills.find(s => s.id === 'untracked');
+      expect(skill!.installCount).toBeUndefined();
+      expect(skill!.lastInstalledAt).toBeUndefined();
+    });
+  });
+
   describe('importFromPath', () => {
     it('should import skill from external path', async () => {
       // Create external skill directory
