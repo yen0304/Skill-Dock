@@ -117,6 +117,37 @@ Body
     // Empty name should fallback to 'untitled'
     expect(result.metadata.name).toBe('untitled');
   });
+
+  it('should fall back to body-only when YAML is malformed', () => {
+    // Broken YAML inside frontmatter markers triggers the catch branch (line 27)
+    const content = `---
+name: [unclosed bracket
+description: broken
+---
+
+Body content
+`;
+    const result = parseFrontmatter(content);
+    expect(result.metadata.name).toBe('untitled');
+    expect(result.metadata.description).toBe('');
+    expect(result.body).toContain('Body content');
+  });
+
+  it('should coerce non-string YAML scalar values to string', () => {
+    // Numeric name/version without quotes → YAML produces numbers, stringVal uses String(v)
+    const content = `---
+name: 42
+description: numeric name test
+version: 3
+---
+
+Body
+`;
+    const result = parseFrontmatter(content);
+    expect(result.metadata.name).toBe('42');
+    // version is at top level here, stringVal should stringify it
+    expect(result.metadata.version).toBe('3');
+  });
 });
 
 describe('serializeSkill', () => {

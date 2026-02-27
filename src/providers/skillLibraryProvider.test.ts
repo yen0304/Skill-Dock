@@ -125,6 +125,7 @@ describe('SkillLibraryProvider', () => {
   let provider: SkillLibraryProvider;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-test-'));
     mockLibraryPath = tmpDir;
     storageService = new StorageService();
@@ -340,5 +341,194 @@ describe('SkillLibraryProvider', () => {
 
     await provider.handleDrop(undefined, dataTransfer);
     expect(importService.exportToLibrary).not.toHaveBeenCalled();
+  });
+
+  it('should handle handleDrop with duplicate skill (keep both)', async () => {
+    // Create existing skill in library
+    const skillDir = path.join(tmpDir, 'dup-keep-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      '---\nname: Dup Keep Skill\ndescription: Existing\n---\nBody'
+    );
+
+    const importService = {
+      exportToLibrary: vi.fn().mockResolvedValue({
+        id: 'dup-keep-skill',
+        metadata: { name: 'Dup Keep Skill', description: '' },
+        body: '',
+        dirPath: tmpDir + '/dup-keep-skill',
+        filePath: tmpDir + '/dup-keep-skill/SKILL.md',
+        lastModified: 0,
+      }),
+    } as unknown as ImportExportService;
+    provider.setImportExportService(importService);
+
+    // Mock user choosing "Keep Both"
+    vi.mocked(vscodeWindow.showWarningMessage).mockResolvedValue('Keep Both' as any);
+
+    const payload = JSON.stringify([{
+      id: 'dup-keep-skill',
+      dirPath: '/tmp/new-dup-keep',
+      filePath: '/tmp/new-dup-keep/SKILL.md',
+      name: 'Dup Keep Skill',
+    }]);
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.set(
+      'application/vnd.code.tree.skilldock.reposkills',
+      new DataTransferItem(payload)
+    );
+
+    await provider.handleDrop(undefined, dataTransfer);
+    // Keep Both falls through to exportToLibrary without deleting
+    expect(importService.exportToLibrary).toHaveBeenCalled();
+  });
+
+  it('should silently skip item when exportToLibrary throws', async () => {
+    const importService = {
+      exportToLibrary: vi.fn().mockRejectedValue(new Error('write error')),
+    } as unknown as ImportExportService;
+    provider.setImportExportService(importService);
+
+    const payload = JSON.stringify([{
+      id: 'error-skill',
+      dirPath: '/tmp/error-skill',
+      filePath: '/tmp/error-skill/SKILL.md',
+      name: 'Error Skill',
+    }]);
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.set(
+      'application/vnd.code.tree.skilldock.reposkills',
+      new DataTransferItem(payload)
+    );
+
+    // Should not throw even when exportToLibrary rejects
+    await expect(provider.handleDrop(undefined, dataTransfer)).resolves.not.toThrow();
+    // savedCount stays 0, so no info message shown
+    expect(vscodeWindow.showInformationMessage).not.toHaveBeenCalled();
+  });
+
+  it('should handle handleDrop with invalid JSON', async () => {
+    const importService = {
+      exportToLibrary: vi.fn(),
+    } as unknown as ImportExportService;
+    provider.setImportExportService(importService);
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.set(
+      'application/vnd.code.tree.skilldock.reposkills',
+      new DataTransferItem('not-valid-json')
+    );
+
+    // Should silently bail out on JSON parse error
+    await expect(provider.handleDrop(undefined, dataTransfer)).resolves.not.toThrow();
+    expect(importService.exportToLibrary).not.toHaveBeenCalled();
+  });
+
+  it('should sort skills by lastModified', async () => {
+    for (const [name, ts] of [['alpha', 1000], ['beta', 2000]] as const) {
+      const skillDir = path.join(tmpDir, `sort-${name}`);
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: ${name}\ndescription: ${name}\n---\nBody`
+      );
+      // Touch mtime to distinguish
+      const t = new Date(ts);
+      fs.utimesSync(path.join(skillDir, 'SKILL.md'), t, t);
+    }
+
+    // Override getConfiguration mock to return 'lastModified'
+    const { workspace } = await import('vscode');
+    vi.mocked(workspace.getConfiguration).mockImplementation((section?: string) => ({
+      get: (key: string, def?: unknown) => {
+        if (key === 'libraryPath') { return tmpDir; }
+        if (key === 'librarySortBy') { return 'lastModified'; }
+        return def;
+      },
+    } as any));
+
+    const children = await provider.getChildren();
+    expect(children).toHaveLength(2);
+
+    // Restore original mock
+    vi.mocked(workspace.getConfiguration).mockImplementation(() => ({
+      get: (key: string, def?: unknown) => {
+        if (key === 'libraryPath') { return tmpDir; }
+        return def;
+      },
+    } as any));
+  });
+
+  it('should sort skills by author', async () => {
+    for (const name of ['zskill', 'askill'] as const) {
+      const skillDir = path.join(tmpDir, name);
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: ${name}\ndescription: ${name}\nauthor: ${name}\n---\nBody`
+      );
+    }
+
+    const { workspace } = await import('vscode');
+    vi.mocked(workspace.getConfiguration).mockImplementation(() => ({
+      get: (key: string, def?: unknown) => {
+        if (key === 'libraryPath') { return tmpDir; }
+        if (key === 'librarySortBy') { return 'author'; }
+        return def;
+      },
+    } as any));
+
+    const children = await provider.getChildren();
+    expect(children).toHaveLength(2);
+    // 'askill' author sorts before 'zskill'
+    expect(children[0].skill.metadata.author).toBe('askill');
+
+    vi.mocked(workspace.getConfiguration).mockImplementation(() => ({
+      get: (key: string, def?: unknown) => {
+        if (key === 'libraryPath') { return tmpDir; }
+        return def;
+      },
+    } as any));
+  });
+
+  it('should sort skills by mostUsed', async () => {
+    for (const name of ['popular', 'rare'] as const) {
+      const skillDir = path.join(tmpDir, name);
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: ${name}\ndescription: ${name}\n---\nBody`
+      );
+    }
+
+    const { workspace } = await import('vscode');
+    vi.mocked(workspace.getConfiguration).mockImplementation(() => ({
+      get: (key: string, def?: unknown) => {
+        if (key === 'libraryPath') { return tmpDir; }
+        if (key === 'librarySortBy') { return 'mostUsed'; }
+        return def;
+      },
+    } as any));
+
+    const children = await provider.getChildren();
+    expect(children).toHaveLength(2);
+
+    vi.mocked(workspace.getConfiguration).mockImplementation(() => ({
+      get: (key: string, def?: unknown) => {
+        if (key === 'libraryPath') { return tmpDir; }
+        return def;
+      },
+    } as any));
+  });
+
+  it('should show error and return empty list when getChildren fails', async () => {
+    vi.spyOn(storageService, 'listSkills').mockRejectedValueOnce(new Error('disk error'));
+
+    const children = await provider.getChildren();
+    expect(children).toEqual([]);
+    expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
   });
 });

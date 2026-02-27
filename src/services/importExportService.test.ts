@@ -235,6 +235,70 @@ describe('ImportExportService', () => {
 
       await service.interactiveImport();
     });
+
+    it('should import skills when user selects skills and format', async () => {
+      // Create a skill in library
+      const skillDir = path.join(mockLibraryPath, 'int-success');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        '---\nname: Int Success\ndescription: D\nauthor: A\n---\nBody'
+      );
+
+      // Mock quick pick to return selected skills
+      vi.mocked(vscodeWindow.showQuickPick)
+        .mockResolvedValueOnce([{
+          label: 'Int Success',
+          description: 'D',
+          detail: 'int-success',
+          skill: {
+            id: 'int-success',
+            metadata: { name: 'Int Success', description: 'D' },
+            body: 'Body',
+            dirPath: skillDir,
+            filePath: path.join(skillDir, 'SKILL.md'),
+            lastModified: Date.now(),
+          },
+          picked: false,
+        }] as any)
+        // Mock format selection
+        .mockResolvedValueOnce({ label: 'Claude', format: 'claude' } as any);
+
+      await service.interactiveImport();
+
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalled();
+    });
+
+    it('should show error message when import fails with non-cancelled error', async () => {
+      const skillDir = path.join(mockLibraryPath, 'int-fail');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        '---\nname: Int Fail\ndescription: D\n---\nBody'
+      );
+
+      const skill = {
+        id: 'int-fail',
+        metadata: { name: 'Int Fail', description: 'D' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: path.join(skillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+
+      vi.mocked(vscodeWindow.showQuickPick)
+        .mockResolvedValueOnce([{
+          label: 'Int Fail', description: 'D', detail: 'int-fail', skill, picked: false,
+        }] as any)
+        .mockResolvedValueOnce({ label: 'Claude', format: 'claude' } as any);
+
+      // Make importToRepo throw a real error (no workspace)
+      (workspace as any).workspaceFolders = undefined;
+
+      await service.interactiveImport();
+
+      expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+    });
   });
 
   // ----------------------------------------------------------

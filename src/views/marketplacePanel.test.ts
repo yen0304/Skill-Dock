@@ -411,6 +411,7 @@ describe('MarketplacePanel message handlers', () => {
       ]),
       fetchAll: vi.fn().mockResolvedValue([]),
       getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+      getInstalledVersionMap: vi.fn().mockResolvedValue(new Map()),
       installSkill: vi.fn().mockResolvedValue(undefined),
       addCustomSource: vi.fn().mockResolvedValue(undefined),
       removeCustomSource: vi.fn().mockResolvedValue(undefined),
@@ -649,5 +650,182 @@ describe('MarketplacePanel filterSourceId on existing panel', () => {
     );
 
     expect(MarketplacePanel.currentPanel).toBeDefined();
+  });
+});
+
+// ----------------------------------------------------------
+// update message handler
+// ----------------------------------------------------------
+describe('MarketplacePanel update handler', () => {
+  beforeEach(() => {
+    MarketplacePanel.currentPanel = undefined;
+    vi.clearAllMocks();
+  });
+
+  function setupPanel(serviceOverrides: Record<string, any> = {}) {
+    const mock = createMockWebviewPanel();
+    vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
+
+    const onRefresh = vi.fn();
+    const mockMarketplaceService = {
+      getSources: vi.fn(() => [{ id: 'anthropic', label: 'Anthropic Skills', isBuiltin: true }]),
+      fetchAll: vi.fn().mockResolvedValue([]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+      getInstalledVersionMap: vi.fn().mockResolvedValue(new Map()),
+      installSkill: vi.fn().mockResolvedValue(undefined),
+      updateSkillSilently: vi.fn().mockResolvedValue(undefined),
+      addCustomSource: vi.fn().mockResolvedValue(undefined),
+      removeCustomSource: vi.fn().mockResolvedValue(undefined),
+      ...serviceOverrides,
+    } as any;
+
+    MarketplacePanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockMarketplaceService,
+      onRefresh,
+    );
+
+    return { mock, onRefresh, mockMarketplaceService };
+  }
+
+  it('should handle update message — success', async () => {
+    const skill = {
+      id: 'update-skill',
+      metadata: { name: 'Update Skill', description: 'desc', version: '2.0' },
+      source: { id: 'anthropic' },
+      repoPath: 'skills/update-skill',
+    };
+
+    const { mock, onRefresh, mockMarketplaceService } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set(['update-skill'])),
+      getInstalledVersionMap: vi.fn().mockResolvedValue(new Map([['update-skill', '1.0']])),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'update', sourceId: 'anthropic', repoPath: 'skills/update-skill' });
+
+    expect(mockMarketplaceService.updateSkillSilently).toHaveBeenCalledWith(skill);
+    expect(onRefresh).toHaveBeenCalled();
+    expect(vscodeWindow.showInformationMessage).toHaveBeenCalled();
+    expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'updateInstalled' }),
+    );
+  });
+
+  it('should handle update message — skill not found', async () => {
+    const { mock, mockMarketplaceService } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([]),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'update', sourceId: 'anthropic', repoPath: 'nonexistent' });
+    expect(mockMarketplaceService.updateSkillSilently).not.toHaveBeenCalled();
+  });
+
+  it('should handle update message — error', async () => {
+    const skill = {
+      id: 'fail-update',
+      metadata: { name: 'Fail Update' },
+      source: { id: 'anthropic' },
+      repoPath: 'skills/fail-update',
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      updateSkillSilently: vi.fn().mockRejectedValue(new Error('update network error')),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'update', sourceId: 'anthropic', repoPath: 'skills/fail-update' });
+    expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+  });
+
+  it('should handle addSource message — error case', async () => {
+    const { mock, mockMarketplaceService } = setupPanel({
+      addCustomSource: vi.fn().mockRejectedValue(new Error('invalid source')),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    vi.mocked(vscodeWindow.showInputBox).mockResolvedValue('https://github.com/org/bad');
+
+    await handler({ command: 'addSource' });
+    expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+  });
+
+  it('should handle addSource message — user cancels', async () => {
+    const { mock, mockMarketplaceService } = setupPanel();
+    const handler = mock.getMessageHandler()!;
+
+    vi.mocked(vscodeWindow.showInputBox).mockResolvedValue(undefined);
+
+    await handler({ command: 'addSource' });
+    expect(mockMarketplaceService.addCustomSource).not.toHaveBeenCalled();
+  });
+
+  it('should handle removeSource message — error case', async () => {
+    const { mock } = setupPanel({
+      removeCustomSource: vi.fn().mockRejectedValue(new Error('remove failed')),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    vi.mocked(vscodeWindow.showWarningMessage).mockResolvedValue('Remove' as any);
+
+    await handler({ command: 'removeSource', sourceId: 'custom/repo' });
+    expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+  });
+
+  it('should apply pending filter after loading skills', async () => {
+    const mock = createMockWebviewPanel();
+    vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
+
+    const mockMarketplaceService = {
+      getSources: vi.fn(() => [{ id: 'anthropic', label: 'Anthropic', isBuiltin: true }]),
+      fetchAll: vi.fn().mockResolvedValue([]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+      getInstalledVersionMap: vi.fn().mockResolvedValue(new Map()),
+    } as any;
+
+    // Create panel with a pending filter
+    MarketplacePanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockMarketplaceService,
+      vi.fn(),
+      'anthropic',
+    );
+
+    const handler = mock.getMessageHandler()!;
+    await handler({ command: 'ready' });
+
+    // After loading, the pending filter should have been sent via postMessage
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const filterCalls = calls.filter((c: any) => c[0]?.command === 'filterSource');
+    expect(filterCalls).toHaveLength(1);
+    expect(filterCalls[0][0].sourceId).toBe('anthropic');
+  });
+
+  it('should handle loading skills where skills have version info', async () => {
+    const skill = {
+      id: 'versioned-skill',
+      metadata: { name: 'Versioned', description: 'desc', author: 'a', version: '2.0', tags: ['t'] },
+      source: { id: 'anthropic', label: 'Anthropic' },
+      repoPath: 'skills/versioned',
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set(['versioned-skill'])),
+      getInstalledVersionMap: vi.fn().mockResolvedValue(new Map([['versioned-skill', '1.0']])),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'ready' });
+
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const updateCalls = calls.filter((c: any) => c[0]?.command === 'updateSkills');
+    expect(updateCalls).toHaveLength(1);
+    // Should indicate hasUpdate: true since versions differ
+    const skillData = updateCalls[0][0].skills[0];
+    expect(skillData.hasUpdate).toBe(true);
   });
 });
