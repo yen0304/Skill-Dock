@@ -133,6 +133,49 @@ Body content
     expect(result.body).toContain('Body content');
   });
 
+  it('should handle bare dash `-` values without crashing', () => {
+    const content = `---
+name: openspec-onboard
+description: Guided onboarding for OpenSpec
+license: MIT
+compatibility: Requires openspec CLI.
+metadata:
+  author: -
+  version: -
+  generatedBy: -
+---
+
+# Body
+`;
+    const result = parseFrontmatter(content);
+    // Should NOT fall into the catch-all 'untitled' path
+    expect(result.metadata.name).toBe('openspec-onboard');
+    expect(result.metadata.description).toBe('Guided onboarding for OpenSpec');
+    expect(result.metadata.license).toBe('MIT');
+    // Bare `-` should be treated as undefined (not specified)
+    expect(result.metadata.author).toBeUndefined();
+    expect(result.metadata.version).toBeUndefined();
+    expect(result.metadata.generatedBy).toBeUndefined();
+    expect(result.body.trim()).toBe('# Body');
+  });
+
+  it('should treat top-level bare dash `-` as undefined', () => {
+    const content = `---
+name: -
+description: -
+author: -
+---
+
+Body
+`;
+    const result = parseFrontmatter(content);
+    // `-` for name should fall back to 'untitled'
+    expect(result.metadata.name).toBe('untitled');
+    // `-` for description should fall back to ''
+    expect(result.metadata.description).toBe('');
+    expect(result.metadata.author).toBeUndefined();
+  });
+
   it('should coerce non-string YAML scalar values to string', () => {
     // Numeric name/version without quotes → YAML produces numbers, stringVal uses String(v)
     const content = `---

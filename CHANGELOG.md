@@ -5,6 +5,12 @@ All notable changes to the Skill Dock extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-02-28
+
+### Fixed
+
+- **Dash placeholder crash**: Frontmatter fields with bare `-` values (e.g. `author: -`) no longer cause a YAML parse error that resets all metadata to "untitled". The parser now safely quotes bare dashes before parsing and treats `-` as "not specified".
+
 ## [0.5.0] - 2026-02-24
 
 ### Added

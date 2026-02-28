@@ -2,7 +2,7 @@
   "name": "skill-dock",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "skill-dock",
   "license": "MIT",
   "repository": {

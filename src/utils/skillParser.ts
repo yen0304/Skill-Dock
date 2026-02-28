@@ -21,7 +21,9 @@ export function parseFrontmatter(content: string): { metadata: SkillMetadata; bo
 
   let raw: Record<string, unknown>;
   try {
-    raw = YAML.parse(yamlStr) ?? {};
+    // Quote bare `-` values that YAML interprets as block-sequence indicators
+    const sanitised = yamlStr.replace(/^(\s*\S+:\s+)-\s*$/gm, '$1"-"');
+    raw = YAML.parse(sanitised) ?? {};
   } catch {
     // Fallback: treat everything as body if YAML is broken
     return {
@@ -85,8 +87,10 @@ export function serializeSkill(metadata: SkillMetadata, body: string): string {
 
 function stringVal(v: unknown): string | undefined {
   if (v === null || v === undefined) { return undefined; }
-  if (typeof v === 'string') { return v; }
-  return String(v);
+  const s = typeof v === 'string' ? v : String(v);
+  // Treat bare `-` as "not specified"
+  if (s === '-') { return undefined; }
+  return s;
 }
 
 function asStringArray(v: unknown): string[] | undefined {
