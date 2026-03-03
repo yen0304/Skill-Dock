@@ -5,6 +5,19 @@ All notable changes to the Skill Dock extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-03-03
+
+### Added
+
+- **Additional-files badge**: Manager and Marketplace skill cards now display a file-count badge when a skill bundles extra files.
+- **Bundled-files detail section**: The Marketplace preview detail view renders a "Bundled Files" list with per-file icons (gear for scripts, page for documents).
+- **Tooltip enhancement**: Library tree-item tooltips now list `additionalFiles` when present.
+- **4 new tests** covering `additionalFiles` tooltip rendering, `additionalFiles` passthrough in Manager, `additionalFilesCount` in Marketplace ready, and `additionalFiles` in Marketplace preview (356 → 360 total).
+
+### Changed
+
+- Test coverage maintained at 90 %+: Statements 97.6 %, Branch 91.5 %, Functions 96.0 %, Lines 98.1 %.
+
 ## [0.6.0] - 2026-03-03
 
 ### Added

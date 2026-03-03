@@ -109,6 +109,7 @@ export class ManagerPanel {
           version: s.metadata.version || '',
           tags: s.metadata.tags || [],
           lastModified: s.lastModified,
+          additionalFiles: s.additionalFiles || [],
           hasAdditionalFiles: !!(s.additionalFiles && s.additionalFiles.length > 0),
         })),
       });
@@ -313,6 +314,12 @@ export class ManagerPanel {
       margin-top: 4px;
     }
 
+    .files-badge {
+      font-size: 0.72em; padding: 2px 7px;
+      background: var(--input-bg); color: var(--desc-fg);
+      border: 1px solid var(--border); border-radius: 10px;
+      display: inline-flex; align-items: center; gap: 3px;
+    }
     .tag {
       font-size: 0.75em;
       padding: 1px 6px;
@@ -453,13 +460,18 @@ export class ManagerPanel {
           skill.version ? 'v' + escapeHtml(skill.version) : '',
         ].filter(Boolean).join(' · ');
 
+        const filesBadge = skill.additionalFiles && skill.additionalFiles.length > 0
+          ? '<span class="files-badge">\u{1F4CE} ' + skill.additionalFiles.length + ' file(s)</span>'
+          : '';
+
         return '<li class="skill-item" data-skill-id="'+escapeHtml(skill.id)+'" data-action="open">' +
           '<div class="skill-icon">✦</div>' +
           '<div class="skill-info">' +
             '<div class="skill-name">' + escapeHtml(skill.name) + '</div>' +
             '<div class="skill-desc">' + escapeHtml(skill.description) + '</div>' +
-            (meta || tags ? '<div class="skill-meta">' +
+            (meta || tags || filesBadge ? '<div class="skill-meta">' +
               (meta ? '<span style="font-size:0.8em;opacity:0.7">' + meta + '</span>' : '') +
+              filesBadge +
               tags +
             '</div>' : '') +
           '</div>' +

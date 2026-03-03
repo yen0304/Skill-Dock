@@ -210,6 +210,7 @@ describe('ManagerPanel message handlers', () => {
     expect(skill.version).toBe('');
     expect(skill.tags).toEqual([]);
     expect(skill.hasAdditionalFiles).toBe(true);
+    expect(skill.additionalFiles).toEqual(['ref.md', 'scripts/helper.sh']);
   });
 
   it('should handle searchSkills message', async () => {

@@ -117,6 +117,28 @@ describe('SkillTreeItem', () => {
     expect(tooltip).toContain('Min');
     expect(tooltip).not.toContain('Author');
   });
+
+  it('should show additionalFiles in tooltip when present', () => {
+    const skillWithFiles: Skill = {
+      ...sampleSkill,
+      additionalFiles: ['ref.md', 'scripts/helper.sh'],
+    };
+    const item = new SkillTreeItem(skillWithFiles, 'library');
+    const tooltip = item.tooltip!.toString();
+    expect(tooltip).toContain('Files:');
+    expect(tooltip).toContain('ref.md');
+    expect(tooltip).toContain('scripts/helper.sh');
+  });
+
+  it('should not show additionalFiles in tooltip when empty', () => {
+    const skillNoFiles: Skill = {
+      ...sampleSkill,
+      additionalFiles: [],
+    };
+    const item = new SkillTreeItem(skillNoFiles, 'library');
+    const tooltip = item.tooltip!.toString();
+    expect(tooltip).not.toContain('Files:');
+  });
 });
 
 describe('SkillLibraryProvider', () => {

@@ -162,6 +162,7 @@ export class MarketplacePanel {
             repoPath: s.repoPath,
             installed,
             hasUpdate,
+            additionalFilesCount: s.additionalFiles?.length || 0,
           };
         }),
         sources: sources.map((s) => ({
@@ -287,6 +288,7 @@ export class MarketplacePanel {
           repoPath: skill.repoPath,
           bodyHtml: markdownToHtml(skill.body || ''),
           installed: installedIds.has(skill.id),
+          additionalFiles: skill.additionalFiles?.map((f) => f.relativePath) || [],
         },
       });
     } catch (err) {
@@ -613,6 +615,30 @@ export class MarketplacePanel {
       border: 1px solid var(--border); padding: 6px 10px; text-align: left;
     }
     .detail-body th { background: var(--input-bg); font-weight: 600; }
+
+    /* Bundled files section in detail view */
+    .bundled-files {
+      margin-top: 20px; padding: 14px 16px;
+      background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px;
+    }
+    .bundled-files-title {
+      font-weight: 600; font-size: 0.9em; margin-bottom: 8px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .bundled-files-list { list-style: none; padding: 0; margin: 0; }
+    .bundled-files-list li {
+      padding: 3px 0; font-size: 0.85em; color: var(--desc-fg);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .bundled-files-list li .file-icon { opacity: 0.7; font-size: 0.9em; }
+
+    /* File count badge on skill cards */
+    .files-badge {
+      font-size: 0.72em; padding: 2px 7px;
+      background: var(--input-bg); color: var(--desc-fg);
+      border: 1px solid var(--border); border-radius: 10px;
+      display: inline-flex; align-items: center; gap: 3px;
+    }
   </style>
 </head>
 <body>
@@ -896,6 +922,10 @@ export class MarketplacePanel {
           skill.version ? 'v' + escapeHtml(skill.version) : '',
         ].filter(Boolean).join(' \u00B7 ');
 
+        var filesBadge = skill.additionalFilesCount > 0
+          ? '<span class="files-badge">\u{1F4CE} ' + skill.additionalFilesCount + ' file(s)</span>'
+          : '';
+
         var btnClass = isInstalled ? 'install-btn installed' : 'install-btn';
         var btnText = isInstalled ? '\u2713 ' + escapeHtml(loc.installedLabel) : escapeHtml(loc.installBtn);
 
@@ -916,6 +946,7 @@ export class MarketplacePanel {
             '<div class="skill-meta">' +
               '<span class="source-tag"><span class="repo-icon">\u{1F4E6}</span> ' + escapeHtml(skill.sourceLabel) + '</span>' +
               (meta ? '<span style="font-size:0.8em;opacity:0.7">' + meta + '</span>' : '') +
+              filesBadge +
               tags +
             '</div>' +
           '</div>' +
@@ -1005,7 +1036,23 @@ export class MarketplacePanel {
       detailMeta.innerHTML = metaParts.join('');
 
       // Render body markdown
-      detailBody.innerHTML = skill.bodyHtml || '';
+      var bodyContent = skill.bodyHtml || '';
+
+      // Append bundled files section if any
+      if (skill.additionalFiles && skill.additionalFiles.length > 0) {
+        var fileItems = skill.additionalFiles.map(function(f) {
+          var icon = '\u{1F4C4}'; // page icon
+          if (f.match(/\\.(sh|bash|py|js|ts)$/)) icon = '\u{2699}';  // gear for scripts
+          if (f.match(/^scripts\\//)) icon = '\u{2699}';
+          return '<li><span class="file-icon">' + icon + '</span>' + escapeHtml(f) + '</li>';
+        }).join('');
+        bodyContent += '<div class="bundled-files">' +
+          '<div class="bundled-files-title">\u{1F4CE} Bundled Files (' + skill.additionalFiles.length + ')</div>' +
+          '<ul class="bundled-files-list">' + fileItems + '</ul>' +
+        '</div>';
+      }
+
+      detailBody.innerHTML = bodyContent;
     }
 
     function hideDetail() {

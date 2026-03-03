@@ -27,6 +27,9 @@ export class SkillTreeItem extends vscode.TreeItem {
     if (skill.metadata.tags && skill.metadata.tags.length > 0) {
       this.tooltip.appendMarkdown(`*${vscode.l10n.t('Tags:')}* ${skill.metadata.tags.join(', ')}\n\n`);
     }
+    if (skill.additionalFiles && skill.additionalFiles.length > 0) {
+      this.tooltip.appendMarkdown(`*${vscode.l10n.t('Files:')}* ${skill.additionalFiles.join(', ')}\n\n`);
+    }
     if (skill.installCount !== undefined && skill.installCount > 0) {
       this.tooltip.appendMarkdown(`*${vscode.l10n.t('Installed {0} time(s)', skill.installCount)}*\n\n`);
     }

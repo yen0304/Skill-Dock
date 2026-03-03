@@ -570,6 +570,64 @@ describe('MarketplacePanel message handlers', () => {
     expect(data.license).toBe('');
     expect(data.tags).toEqual([]);
     expect(data.bodyHtml).toBe('');
+    expect(data.additionalFiles).toEqual([]);
+  });
+
+  it('should include additionalFiles in preview when present', async () => {
+    const skill = {
+      id: 'preview-with-files',
+      metadata: { name: 'WithFiles', description: 'desc', author: 'a', version: '1', license: 'MIT', tags: [] },
+      source: { id: 'anthropic', label: 'Anthropic' },
+      repoPath: 'skills/with-files',
+      body: '# Content',
+      additionalFiles: [
+        { relativePath: 'scripts/setup.sh', content: '#!/bin/bash' },
+        { relativePath: 'config.json', content: '{}' },
+      ],
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'preview', sourceId: 'anthropic', repoPath: 'skills/with-files' });
+
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const previewCalls = calls.filter((c: any) => c[0]?.command === 'showPreview');
+    expect(previewCalls).toHaveLength(1);
+    const data = previewCalls[0][0].skill;
+    expect(data.additionalFiles).toEqual(['scripts/setup.sh', 'config.json']);
+  });
+
+  it('should include additionalFilesCount in ready skills list', async () => {
+    const skill = {
+      id: 'bundled-skill',
+      metadata: { name: 'Bundled', description: 'desc', author: 'a', version: '1', tags: [] },
+      source: { id: 'anthropic', label: 'Anthropic' },
+      repoPath: 'skills/bundled',
+      additionalFiles: [
+        { relativePath: 'helper.py', content: 'pass' },
+        { relativePath: 'data.csv', content: 'a,b' },
+        { relativePath: 'readme.md', content: '# Hi' },
+      ],
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+      getInstalledVersionMap: vi.fn().mockResolvedValue(new Map()),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'ready' });
+
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const updateCalls = calls.filter((c: any) => c[0]?.command === 'updateSkills');
+    expect(updateCalls).toHaveLength(1);
+    const skillData = updateCalls[0][0].skills[0];
+    expect(skillData.additionalFilesCount).toBe(3);
   });
 
   it('should handle preview message — skill not found', async () => {
