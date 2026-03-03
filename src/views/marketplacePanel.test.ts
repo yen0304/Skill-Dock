@@ -9,15 +9,19 @@ function createMockWebviewPanel() {
   const panel = {
     webview: {
       html: '',
-      onDidReceiveMessage: vi.fn((cb: any) => {
+      onDidReceiveMessage: vi.fn((cb: any, _thisArg?: any, disposables?: any[]) => {
         messageHandler = cb;
-        return { dispose: () => {} };
+        const d = { dispose: () => {} };
+        if (disposables) { disposables.push(d); }
+        return d;
       }),
       postMessage: vi.fn(),
     },
-    onDidDispose: vi.fn((cb: any) => {
+    onDidDispose: vi.fn((cb: any, _thisArg?: any, disposables?: any[]) => {
       disposeHandler = cb;
-      return { dispose: () => {} };
+      const d = { dispose: () => {} };
+      if (disposables) { disposables.push(d); }
+      return d;
     }),
     reveal: vi.fn(),
     dispose: vi.fn(),
@@ -439,6 +443,31 @@ describe('MarketplacePanel message handlers', () => {
     );
   });
 
+  it('should handle ready with skills missing optional metadata', async () => {
+    const skill = {
+      id: 'minimal-skill',
+      metadata: { name: 'Minimal', description: 'desc' },
+      source: { id: 'anthropic', label: 'Anthropic' },
+      repoPath: 'skills/minimal',
+    };
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+      getInstalledVersionMap: vi.fn().mockResolvedValue(new Map()),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'ready' });
+
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const updateCalls = calls.filter((c: any) => c[0]?.command === 'updateSkills');
+    expect(updateCalls).toHaveLength(1);
+    const skillData = updateCalls[0][0].skills[0];
+    expect(skillData.author).toBe('');
+    expect(skillData.version).toBe('');
+    expect(skillData.tags).toEqual([]);
+  });
+
   it('should handle refresh message (force reload)', async () => {
     const { mock, mockMarketplaceService } = setupPanel();
     const handler = mock.getMessageHandler()!;
@@ -514,6 +543,33 @@ describe('MarketplacePanel message handlers', () => {
     expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ command: 'showPreview' }),
     );
+  });
+
+  it('should handle preview with skills missing optional metadata', async () => {
+    const skill = {
+      id: 'preview-minimal',
+      metadata: { name: 'Minimal', description: 'desc' },
+      source: { id: 'anthropic', label: 'Anthropic' },
+      repoPath: 'skills/preview-minimal',
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'preview', sourceId: 'anthropic', repoPath: 'skills/preview-minimal' });
+
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const previewCalls = calls.filter((c: any) => c[0]?.command === 'showPreview');
+    expect(previewCalls).toHaveLength(1);
+    const data = previewCalls[0][0].skill;
+    expect(data.author).toBe('');
+    expect(data.version).toBe('');
+    expect(data.license).toBe('');
+    expect(data.tags).toEqual([]);
+    expect(data.bodyHtml).toBe('');
   });
 
   it('should handle preview message — skill not found', async () => {
@@ -623,6 +679,31 @@ describe('MarketplacePanel dispose', () => {
     disposeHandler();
 
     expect(MarketplacePanel.currentPanel).toBeUndefined();
+  });
+
+  it('should be idempotent on double dispose', () => {
+    const mock = createMockWebviewPanel();
+    vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
+
+    const mockMarketplaceService = {
+      getSources: vi.fn(() => []),
+      fetchAll: vi.fn().mockResolvedValue([]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+    } as any;
+
+    MarketplacePanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockMarketplaceService,
+      vi.fn(),
+    );
+
+    const disposeHandler = mock.getDisposeHandler()!;
+    disposeHandler();
+    // Second dispose should not throw
+    disposeHandler();
+
+    expect(MarketplacePanel.currentPanel).toBeUndefined();
+    expect(mock.panel.dispose).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -761,6 +842,32 @@ describe('MarketplacePanel update handler', () => {
 
     await handler({ command: 'addSource' });
     expect(mockMarketplaceService.addCustomSource).not.toHaveBeenCalled();
+  });
+
+  it('addSource validateInput should validate empty, invalid, and valid URLs', async () => {
+    const { mock } = setupPanel();
+    const handler = mock.getMessageHandler()!;
+
+    // Capture the validateInput function when showInputBox is called
+    let validateInput: ((value: string) => string | null) | undefined;
+    vi.mocked(vscodeWindow.showInputBox).mockImplementation(async (options: any) => {
+      validateInput = options?.validateInput;
+      return undefined; // user cancels after we capture
+    });
+
+    await handler({ command: 'addSource' });
+
+    expect(validateInput).toBeDefined();
+
+    // Empty value
+    expect(validateInput!('')).toBeTruthy();
+    expect(validateInput!('   ')).toBeTruthy();
+
+    // Invalid URL
+    expect(validateInput!('not-a-url')).toBeTruthy();
+
+    // Valid URL
+    expect(validateInput!('https://github.com/owner/repo')).toBeNull();
   });
 
   it('should handle removeSource message — error case', async () => {

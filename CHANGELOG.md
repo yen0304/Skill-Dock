@@ -5,6 +5,21 @@ All notable changes to the Skill Dock extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-03
+
+### Added
+
+- **Additional files support**: Marketplace skills can now bundle extra files such as reference documents, scripts, and templates alongside `SKILL.md`. These sibling files are automatically downloaded and saved to the skill directory during install and update.
+- **`RemoteAdditionalFile` model**: New interface for representing supplementary files discovered in remote skill repositories.
+- **`StorageService.writeSkillFile()`**: New method to write additional files into a skill's directory, creating intermediate subdirectories as needed.
+- **31 new tests** covering token migration, command handlers (setGithubToken, clearGithubToken, sortLibrary, duplicateSkill, error paths), validateInput callbacks, panel double-dispose guards, nested directory copy, and more (325 → 356 total).
+
+### Changed
+
+- **Test coverage raised to 90 %+** across all metrics: Statements 97.6 %, Branch 91.4 %, Functions 96.0 %, Lines 98.1 %.
+- `_fetchSkillMd()` now receives the full file tree so it can detect sibling files in the same skill directory.
+- `installSkill()` and `updateSkillSilently()` now download additional files after saving `SKILL.md`.
+
 ## [0.5.1] - 2026-02-28
 
 ### Fixed

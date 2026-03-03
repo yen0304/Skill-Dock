@@ -306,6 +306,16 @@ export class StorageService {
   }
 
   /**
+   * Write an additional file into a skill's directory.
+   * Creates intermediate directories as needed.
+   */
+  async writeSkillFile(skillId: string, relativePath: string, content: string): Promise<void> {
+    const filePath = path.join(this._libraryPath, skillId, relativePath);
+    await this.ensureDirectory(path.dirname(filePath));
+    await fs.writeFile(filePath, content, 'utf-8');
+  }
+
+  /**
    * Search skills by name or description
    */
   async searchSkills(query: string): Promise<Skill[]> {

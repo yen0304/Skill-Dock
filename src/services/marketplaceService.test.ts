@@ -336,6 +336,58 @@ describe('MarketplaceService', () => {
       const skill = await storageService.readSkill('licensed-skill');
       expect(skill).not.toBeNull();
     });
+
+    it('should download and write additional files when installing', async () => {
+      const refUrl = 'https://raw.githubusercontent.com/anthropics/skills/main/rich-skill/reference.md';
+      const scriptUrl = 'https://raw.githubusercontent.com/anthropics/skills/main/rich-skill/scripts/helper.sh';
+
+      vi.mocked(https.get as any).mockImplementation(
+        (_url: string, _opts: unknown, cb: (res: any) => void) => {
+          const bodies: Record<string, string> = {
+            [refUrl]: '# Reference\n\nDocs here',
+            [scriptUrl]: '#!/bin/bash\necho hello',
+          };
+          const res = Object.assign(new EventEmitter(), {
+            statusCode: 200, headers: {}, resume: vi.fn(),
+          });
+          const req = Object.assign(new EventEmitter(), { end: vi.fn() });
+          process.nextTick(() => {
+            cb(res);
+            res.emit('data', Buffer.from(bodies[_url] ?? ''));
+            res.emit('end');
+          });
+          return req;
+        }
+      );
+
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'rich-skill',
+        metadata: { name: 'Rich Skill', description: 'Has extras' },
+        body: '# Rich',
+        repoPath: 'skills/rich-skill/SKILL.md',
+        downloadUrl: 'https://...',
+        additionalFiles: [
+          { relativePath: 'reference.md', downloadUrl: refUrl },
+          { relativePath: 'scripts/helper.sh', downloadUrl: scriptUrl },
+        ],
+      };
+
+      await service.installSkill(remote);
+
+      // SKILL.md was created
+      const skill = await storageService.readSkill('rich-skill');
+      expect(skill).not.toBeNull();
+
+      // Additional files were written
+      const fs2 = await import('fs');
+      const refPath = path.join(tmpDir, 'rich-skill', 'reference.md');
+      const helperPath = path.join(tmpDir, 'rich-skill', 'scripts', 'helper.sh');
+      expect(fs2.existsSync(refPath)).toBe(true);
+      expect(fs2.readFileSync(refPath, 'utf-8')).toBe('# Reference\n\nDocs here');
+      expect(fs2.existsSync(helperPath)).toBe(true);
+      expect(fs2.readFileSync(helperPath, 'utf-8')).toBe('#!/bin/bash\necho hello');
+    });
   });
 
   // ----------------------------------------------------------
@@ -468,6 +520,43 @@ describe('MarketplaceService', () => {
 
       // No warning dialog shown
       expect(vscodeModule.window.showWarningMessage).not.toHaveBeenCalled();
+    });
+
+    it('should download and write additional files when updating silently', async () => {
+      await storageService.createSkill('update-files-skill', { name: 'Old', description: '' }, '# Old');
+
+      const refUrl = 'https://raw.githubusercontent.com/anthropics/skills/main/update-files-skill/ref.md';
+      vi.mocked(https.get as any).mockImplementation(
+        (_url: string, _opts: unknown, cb: (res: any) => void) => {
+          const res = Object.assign(new EventEmitter(), {
+            statusCode: 200, headers: {}, resume: vi.fn(),
+          });
+          const req = Object.assign(new EventEmitter(), { end: vi.fn() });
+          process.nextTick(() => {
+            cb(res);
+            res.emit('data', Buffer.from('# Updated Reference'));
+            res.emit('end');
+          });
+          return req;
+        }
+      );
+
+      const remote = {
+        source: BUILTIN_MARKETPLACE_SOURCES[0],
+        id: 'update-files-skill',
+        metadata: { name: 'New', description: 'v2', version: '2.0.0' },
+        body: '# New',
+        repoPath: 'skills/update-files-skill/SKILL.md',
+        downloadUrl: 'https://...',
+        additionalFiles: [{ relativePath: 'ref.md', downloadUrl: refUrl }],
+      };
+
+      await service.updateSkillSilently(remote);
+
+      const fs2 = await import('fs');
+      const refPath = path.join(tmpDir, 'update-files-skill', 'ref.md');
+      expect(fs2.existsSync(refPath)).toBe(true);
+      expect(fs2.readFileSync(refPath, 'utf-8')).toBe('# Updated Reference');
     });
   });
 
@@ -826,6 +915,61 @@ describe('MarketplaceService', () => {
       // parseFrontmatter defaults to 'untitled' — _fetchSkillMd derive logic is unreachable
       expect(skills[0].metadata.name).toBe('untitled');
       expect(skills[0].id).toBe('my-cool-tool');
+    });
+
+    it('should populate additionalFiles for sibling files in the skill directory', async () => {
+      mockHttpResponses({
+        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+          status: 200,
+          body: JSON.stringify({
+            tree: [
+              { type: 'blob', path: 'my-skill/SKILL.md' },
+              { type: 'blob', path: 'my-skill/reference.md' },
+              { type: 'blob', path: 'my-skill/scripts/helper.sh' },
+              { type: 'blob', path: 'README.md' }, // root-level file — must NOT be included
+            ],
+          }),
+        },
+        'https://raw.githubusercontent.com/testorg/skills/main/my-skill/SKILL.md': {
+          status: 200,
+          body: '---\nname: My Skill\ndescription: desc\n---\nContent',
+        },
+      });
+
+      const skills = await service.fetchSource(testSource);
+      expect(skills).toHaveLength(1);
+      expect(skills[0].additionalFiles).toHaveLength(2);
+
+      const paths = skills[0].additionalFiles!.map((f) => f.relativePath);
+      expect(paths).toContain('reference.md');
+      expect(paths).toContain('scripts/helper.sh');
+
+      const ref = skills[0].additionalFiles!.find((f) => f.relativePath === 'reference.md')!;
+      expect(ref.downloadUrl).toBe(
+        'https://raw.githubusercontent.com/testorg/skills/main/my-skill/reference.md'
+      );
+    });
+
+    it('should set additionalFiles to undefined when there are no siblings', async () => {
+      mockHttpResponses({
+        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+          status: 200,
+          body: JSON.stringify({
+            tree: [
+              { type: 'blob', path: 'solo-skill/SKILL.md' },
+              { type: 'blob', path: 'README.md' },
+            ],
+          }),
+        },
+        'https://raw.githubusercontent.com/testorg/skills/main/solo-skill/SKILL.md': {
+          status: 200,
+          body: '---\nname: Solo\ndescription: alone\n---\nBody',
+        },
+      });
+
+      const skills = await service.fetchSource(testSource);
+      expect(skills).toHaveLength(1);
+      expect(skills[0].additionalFiles).toBeUndefined();
     });
 
     it('should handle network error', async () => {

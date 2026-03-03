@@ -603,5 +603,428 @@ describe('extension', () => {
 
       expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
     });
+
+    it('importSkill with SkillTreeItem but cancelled format should do nothing', async () => {
+      const skill = {
+        id: 'fmt-cancel',
+        metadata: { name: 'Fmt Cancel', description: 'desc' },
+        body: 'Body',
+        dirPath: '/tmp/fmt-cancel',
+        filePath: '/tmp/fmt-cancel/SKILL.md',
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'library');
+
+      // pickTargetFormat returns undefined => cancelled
+      vi.mocked(vscodeWindow.showQuickPick).mockResolvedValue(undefined as any);
+
+      const handler = commandHandlers.get('skilldock.importSkill');
+      await handler!(treeItem);
+
+      // Should not show any error or info message
+      expect(vscodeWindow.showErrorMessage).not.toHaveBeenCalled();
+    });
+
+    it('importSkill with SkillTreeItem and importToRepo error should show error', async () => {
+      const tmpWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'ext-ws-err-'));
+      (workspace as any).workspaceFolders = [{ uri: { fsPath: tmpWorkspace } }];
+
+      const skill = {
+        id: 'import-err',
+        metadata: { name: 'Import Err', description: 'desc' },
+        body: 'Body',
+        dirPath: '/tmp/import-err',
+        filePath: '/tmp/import-err/SKILL.md',
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'library');
+
+      vi.mocked(vscodeWindow.showQuickPick).mockResolvedValue({ format: 'claude' } as any);
+
+      const handler = commandHandlers.get('skilldock.importSkill');
+      await handler!(treeItem);
+
+      // importToRepo on non-existent dir should throw
+      expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+
+      (workspace as any).workspaceFolders = undefined;
+      fs.rmSync(tmpWorkspace, { recursive: true, force: true });
+    });
+
+    it('importSkillFromRepo with SkillTreeItem and exportToLibrary error should show error', async () => {
+      const skill = {
+        id: 'repo-err',
+        metadata: { name: 'Repo Err', description: 'desc' },
+        body: 'Body',
+        dirPath: '/tmp/nonexistent-repo-dir',
+        filePath: '/tmp/nonexistent-repo-dir/SKILL.md',
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'repo');
+
+      const handler = commandHandlers.get('skilldock.importSkillFromRepo');
+      await handler!(treeItem);
+
+      expect(vscodeWindow.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Save failed')
+      );
+    });
+
+    it('addToLibrary with exportToLibrary error should show error', async () => {
+      const skill = {
+        id: 'add-err',
+        metadata: { name: 'Add Err', description: 'desc' },
+        body: 'Body',
+        dirPath: '/tmp/nonexistent-add-dir',
+        filePath: '/tmp/nonexistent-add-dir/SKILL.md',
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'repo');
+
+      const handler = commandHandlers.get('skilldock.addToLibrary');
+      await handler!(treeItem);
+
+      expect(vscodeWindow.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Save failed')
+      );
+    });
+
+    it('duplicateSkill via quickpick should duplicate', async () => {
+      const skillDir = path.join(tmpDir, 'pick-dup');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: Pick Dup\ndescription: d\n---\nBody');
+
+      const skill = {
+        id: 'pick-dup',
+        metadata: { name: 'Pick Dup', description: 'd' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: path.join(skillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+
+      // First call: showQuickPick for pickSkill; second: showInputBox for newId
+      vi.mocked(vscodeWindow.showQuickPick).mockResolvedValue({ skill } as any);
+      vi.mocked(vscodeWindow.showInputBox).mockResolvedValue('pick-dup-copy');
+
+      const handler = commandHandlers.get('skilldock.duplicateSkill');
+      await handler!();
+
+      expect(fs.existsSync(path.join(tmpDir, 'pick-dup-copy', 'SKILL.md'))).toBe(true);
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Pick Dup')
+      );
+    });
+
+    it('duplicateSkill with cancelled showInputBox should do nothing', async () => {
+      const skillDir = path.join(tmpDir, 'dup-cancel');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: Dup Cancel\ndescription: d\n---\nBody');
+
+      const skill = {
+        id: 'dup-cancel',
+        metadata: { name: 'Dup Cancel', description: 'd' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: path.join(skillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'library');
+
+      vi.mocked(vscodeWindow.showInputBox).mockResolvedValue(undefined);
+
+      const handler = commandHandlers.get('skilldock.duplicateSkill');
+      await handler!(treeItem);
+
+      // Should not create a copy
+      expect(vscodeWindow.showInformationMessage).not.toHaveBeenCalled();
+    });
+
+    it('duplicateSkill with error should show error message', async () => {
+      // Try to duplicate a non-existent skill
+      const skill = {
+        id: 'nonexistent-skill',
+        metadata: { name: 'Nonexistent', description: 'd' },
+        body: 'Body',
+        dirPath: '/tmp/nonexistent-dir',
+        filePath: '/tmp/nonexistent-dir/SKILL.md',
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'library');
+
+      vi.mocked(vscodeWindow.showInputBox).mockResolvedValue('dup-copy');
+
+      const handler = commandHandlers.get('skilldock.duplicateSkill');
+      await handler!(treeItem);
+
+      expect(vscodeWindow.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Duplicate failed')
+      );
+    });
+
+    it('removeMarketplaceSource with builtin source should do nothing', async () => {
+      const source = {
+        id: 'builtin/skills',
+        owner: 'builtin',
+        repo: 'skills',
+        branch: 'main',
+        path: '',
+        label: 'Built-in Skills',
+        isBuiltin: true,
+      };
+      const sourceItem = new MarketplaceSourceItem(source);
+
+      const handler = commandHandlers.get('skilldock.removeMarketplaceSource');
+      await handler!(sourceItem);
+
+      // Should not show any warning or error
+      expect(vscodeWindow.showWarningMessage).not.toHaveBeenCalled();
+    });
+
+    it('removeMarketplaceSource with cancel should do nothing', async () => {
+      const source = {
+        id: 'testorg/custom',
+        owner: 'testorg',
+        repo: 'custom',
+        branch: 'main',
+        path: '',
+        label: 'Test Org / Custom',
+        isBuiltin: false,
+      };
+      const sourceItem = new MarketplaceSourceItem(source);
+
+      vi.mocked(vscodeWindow.showWarningMessage).mockResolvedValue('Cancel' as any);
+
+      const handler = commandHandlers.get('skilldock.removeMarketplaceSource');
+      await handler!(sourceItem);
+
+      // Should not show error
+      expect(vscodeWindow.showErrorMessage).not.toHaveBeenCalled();
+    });
+
+    it('removeMarketplaceSource with error should show error message', async () => {
+      const source = {
+        id: 'errorg/errrepo',
+        owner: 'errorg',
+        repo: 'errrepo',
+        branch: 'main',
+        path: '',
+        label: 'Error Source',
+        isBuiltin: false,
+      };
+      const sourceItem = new MarketplaceSourceItem(source);
+
+      vi.mocked(vscodeWindow.showWarningMessage).mockResolvedValue('Remove' as any);
+
+      // Force removeCustomSource to throw - mock getConfiguration for both calls
+      const errorConfig = {
+        get: (key: string, def?: unknown) => {
+          if (key === 'marketplaceSources') { return ['https://github.com/errorg/errrepo']; }
+          if (key === 'libraryPath') { return mockLibraryPath; }
+          return def;
+        },
+        update: vi.fn().mockRejectedValue(new Error('config write failed')),
+      } as any;
+      vi.mocked(workspace.getConfiguration)
+        .mockReturnValueOnce(errorConfig)
+        .mockReturnValueOnce(errorConfig);
+
+      const handler = commandHandlers.get('skilldock.removeMarketplaceSource');
+      await handler!(sourceItem);
+
+      expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+    });
+
+    it('openMarketplaceSource with MarketplaceSourceItem should open with sourceId', () => {
+      const source = {
+        id: 'test/source',
+        owner: 'test',
+        repo: 'source',
+        branch: 'main',
+        path: '',
+        label: 'Test Source',
+        isBuiltin: false,
+      };
+      const sourceItem = new MarketplaceSourceItem(source);
+
+      const handler = commandHandlers.get('skilldock.openMarketplaceSource');
+      expect(handler).toBeDefined();
+      expect(() => handler!(sourceItem)).not.toThrow();
+    });
+  });
+
+  describe('commands with secrets', () => {
+    let commandHandlers: Map<string, (...args: unknown[]) => unknown>;
+    let mockSecrets: { get: any; store: any; delete: any };
+
+    beforeEach(() => {
+      commandHandlers = new Map();
+      vi.mocked(commands.registerCommand).mockImplementation((id: string, handler: any) => {
+        commandHandlers.set(id, handler);
+        return { dispose: () => {} };
+      });
+
+      mockSecrets = {
+        get: vi.fn().mockResolvedValue(undefined),
+        store: vi.fn().mockResolvedValue(undefined),
+        delete: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const subscriptions: any[] = [];
+      const mockContext = {
+        extensionUri: { path: '/mock/extension', fsPath: '/mock/extension' },
+        subscriptions,
+        secrets: mockSecrets,
+      } as any;
+
+      activate(mockContext);
+    });
+
+    it('setGithubToken should store token when value is provided', async () => {
+      vi.mocked(vscodeWindow.showInputBox).mockResolvedValue('ghp_test123');
+
+      const handler = commandHandlers.get('skilldock.setGithubToken');
+      await handler!();
+
+      expect(mockSecrets.store).toHaveBeenCalledWith('skilldock.githubToken', 'ghp_test123');
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('saved')
+      );
+    });
+
+    it('setGithubToken should delete token when empty value is provided', async () => {
+      vi.mocked(vscodeWindow.showInputBox).mockResolvedValue('');
+
+      const handler = commandHandlers.get('skilldock.setGithubToken');
+      await handler!();
+
+      expect(mockSecrets.delete).toHaveBeenCalledWith('skilldock.githubToken');
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('cleared')
+      );
+    });
+
+    it('setGithubToken should do nothing when cancelled', async () => {
+      vi.mocked(vscodeWindow.showInputBox).mockResolvedValue(undefined);
+
+      const handler = commandHandlers.get('skilldock.setGithubToken');
+      await handler!();
+
+      expect(mockSecrets.store).not.toHaveBeenCalled();
+      expect(mockSecrets.delete).not.toHaveBeenCalled();
+    });
+
+    it('clearGithubToken should delete token', async () => {
+      const handler = commandHandlers.get('skilldock.clearGithubToken');
+      await handler!();
+
+      expect(mockSecrets.delete).toHaveBeenCalledWith('skilldock.githubToken');
+      expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('cleared')
+      );
+    });
+
+    it('sortLibrary should update config on selection', async () => {
+      vi.mocked(vscodeWindow.showQuickPick).mockResolvedValue({ value: 'lastModified' } as any);
+
+      const handler = commandHandlers.get('skilldock.sortLibrary');
+      await handler!();
+
+      expect(vscodeWindow.showQuickPick).toHaveBeenCalled();
+    });
+
+    it('sortLibrary should do nothing on cancel', async () => {
+      vi.mocked(vscodeWindow.showQuickPick).mockResolvedValue(undefined as any);
+
+      const handler = commandHandlers.get('skilldock.sortLibrary');
+      await handler!();
+
+      // No error should occur
+      expect(vscodeWindow.showErrorMessage).not.toHaveBeenCalled();
+    });
+
+    it('addMarketplaceSource validateInput should validate inputs', async () => {
+      let validateInput: ((value: string) => string | null) | undefined;
+      vi.mocked(vscodeWindow.showInputBox).mockImplementation(async (options: any) => {
+        validateInput = options?.validateInput;
+        return undefined; // cancel
+      });
+
+      const handler = commandHandlers.get('skilldock.addMarketplaceSource');
+      await handler!();
+
+      expect(validateInput).toBeDefined();
+      expect(validateInput!('')).toBeTruthy();
+      expect(validateInput!('bad-url')).toBeTruthy();
+      expect(validateInput!('https://github.com/owner/repo')).toBeNull();
+    });
+
+    it('duplicateSkill validateInput should validate inputs', async () => {
+      const skillDir = path.join(tmpDir, 'val-dup');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: Val Dup\ndescription: d\n---\nBody');
+
+      const skill = {
+        id: 'val-dup',
+        metadata: { name: 'Val Dup', description: 'd' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: path.join(skillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+      const treeItem = new SkillTreeItem(skill, 'library');
+
+      let validateInput: ((value: string) => string | null) | undefined;
+      vi.mocked(vscodeWindow.showInputBox).mockImplementation(async (options: any) => {
+        validateInput = options?.validateInput;
+        return undefined; // cancel
+      });
+
+      const handler = commandHandlers.get('skilldock.duplicateSkill');
+      await handler!(treeItem);
+
+      expect(validateInput).toBeDefined();
+      // Empty input
+      expect(validateInput!('')).toBeTruthy();
+      expect(validateInput!('   ')).toBeTruthy();
+      // Invalid chars
+      expect(validateInput!('UPPER_CASE')).toBeTruthy();
+      expect(validateInput!('has spaces')).toBeTruthy();
+      // Valid input
+      expect(validateInput!('valid-id-123')).toBeNull();
+    });
+  });
+
+  describe('token migration', () => {
+    it('should migrate legacy token from settings to SecretStorage', async () => {
+      const mockSecrets = {
+        get: vi.fn().mockResolvedValue(undefined),
+        store: vi.fn().mockResolvedValue(undefined),
+        delete: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const mockUpdate = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(workspace.getConfiguration).mockReturnValue({
+        get: (key: string, def?: unknown) => {
+          if (key === 'libraryPath') { return mockLibraryPath; }
+          if (key === 'githubToken') { return 'old-token-value'; }
+          if (key === 'marketplaceSources') { return []; }
+          return def;
+        },
+        update: mockUpdate,
+      } as any);
+
+      const subscriptions: any[] = [];
+      const mockContext = {
+        extensionUri: { path: '/mock/extension', fsPath: '/mock/extension' },
+        subscriptions,
+        secrets: mockSecrets,
+      } as any;
+
+      await activate(mockContext);
+
+      expect(mockSecrets.store).toHaveBeenCalledWith('skilldock.githubToken', 'old-token-value');
+      expect(mockUpdate).toHaveBeenCalledWith('githubToken', undefined, 1); // ConfigurationTarget.Global = 1
+    });
   });
 });

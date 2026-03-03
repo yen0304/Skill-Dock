@@ -45,15 +45,19 @@ function createMockWebviewPanel() {
   const panel = {
     webview: {
       html: '',
-      onDidReceiveMessage: vi.fn((cb: any) => {
+      onDidReceiveMessage: vi.fn((cb: any, _thisArg?: any, disposables?: any[]) => {
         messageHandler = cb;
-        return { dispose: () => {} };
+        const d = { dispose: () => {} };
+        if (disposables) { disposables.push(d); }
+        return d;
       }),
       postMessage: vi.fn(),
     },
-    onDidDispose: vi.fn((cb: any) => {
+    onDidDispose: vi.fn((cb: any, _thisArg?: any, disposables?: any[]) => {
       disposeHandler = cb;
-      return { dispose: () => {} };
+      const d = { dispose: () => {} };
+      if (disposables) { disposables.push(d); }
+      return d;
     }),
     reveal: vi.fn(),
     dispose: vi.fn(),
@@ -181,6 +185,31 @@ describe('ManagerPanel message handlers', () => {
     expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ command: 'updateSkills' }),
     );
+  });
+
+  it('should handle getSkills with skills missing optional metadata and with additionalFiles', async () => {
+    const skills = [
+      {
+        id: 'minimal',
+        metadata: { name: 'Minimal', description: 'no optional fields' },
+        lastModified: 1,
+        additionalFiles: ['ref.md', 'scripts/helper.sh'],
+      },
+    ];
+    const { mock } = setupPanel({ listSkills: vi.fn().mockResolvedValue(skills) });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'getSkills' });
+
+    const postCall = mock.panel.webview.postMessage.mock.calls.find(
+      (c: any) => c[0]?.command === 'updateSkills',
+    );
+    expect(postCall).toBeDefined();
+    const skill = postCall![0].skills[0];
+    expect(skill.author).toBe('');
+    expect(skill.version).toBe('');
+    expect(skill.tags).toEqual([]);
+    expect(skill.hasAdditionalFiles).toBe(true);
   });
 
   it('should handle searchSkills message', async () => {
@@ -343,6 +372,32 @@ describe('ManagerPanel dispose', () => {
     disposeHandler();
 
     expect(ManagerPanel.currentPanel).toBeUndefined();
+  });
+
+  it('should be idempotent on double dispose', () => {
+    const mock = createMockWebviewPanel();
+    vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
+
+    const mockStorageService = {
+      listSkills: vi.fn().mockResolvedValue([]),
+      onDidChange: vi.fn(() => ({ dispose: () => {} })),
+    } as any;
+
+    ManagerPanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockStorageService,
+      {} as any,
+      vi.fn(),
+    );
+
+    const disposeHandler = mock.getDisposeHandler()!;
+    disposeHandler();
+    // Second dispose should not throw
+    disposeHandler();
+
+    expect(ManagerPanel.currentPanel).toBeUndefined();
+    // panel.dispose should only be called once (by the first dispose)
+    expect(mock.panel.dispose).toHaveBeenCalledTimes(1);
   });
 });
 

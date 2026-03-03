@@ -72,6 +72,16 @@ export interface MarketplaceSource {
 }
 
 /**
+ * A supporting file bundled alongside a remote skill (e.g. reference.md, scripts/helper.sh).
+ */
+export interface RemoteAdditionalFile {
+  /** Relative path from the skill directory, e.g. "reference.md" or "scripts/helper.sh" */
+  relativePath: string;
+  /** Raw download URL for the file */
+  downloadUrl: string;
+}
+
+/**
  * A skill discovered from a remote marketplace source.
  */
 export interface RemoteSkill {
@@ -87,6 +97,8 @@ export interface RemoteSkill {
   repoPath: string;
   /** Raw download URL */
   downloadUrl: string;
+  /** Additional files bundled in the skill directory (templates, scripts, references, etc.) */
+  additionalFiles?: RemoteAdditionalFile[];
 }
 
 /**

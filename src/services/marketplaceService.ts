@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as https from 'https';
 import {
   MarketplaceSource,
+  RemoteAdditionalFile,
   RemoteSkill,
   BUILTIN_MARKETPLACE_SOURCES,
 } from '../models/skill';
@@ -129,9 +130,9 @@ export class MarketplaceService {
       ? skillMdPaths.filter((p) => p.startsWith(prefix))
       : skillMdPaths;
 
-    // 3. Fetch each SKILL.md content
+    // 3. Fetch each SKILL.md content (pass full tree so siblings can be collected)
     const results = await Promise.allSettled(
-      filtered.map((mdPath) => this._fetchSkillMd(source, mdPath, token))
+      filtered.map((mdPath) => this._fetchSkillMd(source, mdPath, token, treePaths))
     );
 
     const skills: RemoteSkill[] = [];
@@ -165,6 +166,8 @@ export class MarketplaceService {
     } else {
       await this.storageService.createSkill(remote.id, remote.metadata, remote.body);
     }
+    const token = await this._resolveToken();
+    await this._saveAdditionalFiles(remote, token);
     await this.storageService.recordInstall(remote.id, remote.metadata.version);
   }
 
@@ -176,7 +179,20 @@ export class MarketplaceService {
   /** Update a skill silently (no overwrite dialog) and record the install stat. */
   async updateSkillSilently(remote: RemoteSkill): Promise<void> {
     await this.storageService.updateSkill(remote.id, remote.metadata, remote.body);
+    const token = await this._resolveToken();
+    await this._saveAdditionalFiles(remote, token);
     await this.storageService.recordInstall(remote.id, remote.metadata.version);
+  }
+
+  /** Download and write all additional files bundled with a remote skill. */
+  private async _saveAdditionalFiles(remote: RemoteSkill, token?: string): Promise<void> {
+    if (!remote.additionalFiles?.length) { return; }
+    await Promise.all(
+      remote.additionalFiles.map(async (file) => {
+        const content = await this._httpGetText(file.downloadUrl, token);
+        await this.storageService.writeSkillFile(remote.id, file.relativePath, content);
+      })
+    );
   }
 
   /** Check which remote skill IDs are already installed locally. */
@@ -225,6 +241,7 @@ export class MarketplaceService {
     source: MarketplaceSource,
     repoPath: string,
     token?: string,
+    allPaths: string[] = [],
   ): Promise<RemoteSkill | null> {
     const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.branch}/${repoPath}`;
     const content = await this._httpGetText(rawUrl, token);
@@ -246,6 +263,17 @@ export class MarketplaceService {
     const parts = repoPath.split('/');
     const dirName = parts.length >= 2 ? parts[parts.length - 2] : source.repo;
 
+    // Collect sibling files in the same skill directory (scripts, references, templates, etc.)
+    const skillDir = repoPath.substring(0, repoPath.lastIndexOf('/'));
+    const additionalFiles: RemoteAdditionalFile[] = skillDir
+      ? allPaths
+          .filter((p) => p !== repoPath && p.startsWith(skillDir + '/'))
+          .map((p) => ({
+            relativePath: p.substring(skillDir.length + 1),
+            downloadUrl: `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.branch}/${p}`,
+          }))
+      : [];
+
     return {
       source,
       id: dirName,
@@ -253,6 +281,7 @@ export class MarketplaceService {
       body,
       repoPath,
       downloadUrl: rawUrl,
+      additionalFiles: additionalFiles.length > 0 ? additionalFiles : undefined,
     };
   }
 

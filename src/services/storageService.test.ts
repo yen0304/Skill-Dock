@@ -402,4 +402,76 @@ describe('StorageService', () => {
       expect(imported.id).toBe('collider-1');
     });
   });
+
+  // ----------------------------------------------------------
+  // writeSkillFile
+  // ----------------------------------------------------------
+  describe('writeSkillFile', () => {
+    it('should write a flat additional file into the skill directory', async () => {
+      await service.createSkill('base-skill', { name: 'Base', description: '' }, '# Base');
+      await service.writeSkillFile('base-skill', 'reference.md', '# Reference\n\nDocs here');
+
+      const filePath = path.join(service.libraryPath, 'base-skill', 'reference.md');
+      expect(fs.existsSync(filePath)).toBe(true);
+      expect(fs.readFileSync(filePath, 'utf-8')).toBe('# Reference\n\nDocs here');
+    });
+
+    it('should create nested directories for scripts/helper.sh', async () => {
+      await service.createSkill('scripted-skill', { name: 'Scripted', description: '' }, '# Script');
+      await service.writeSkillFile('scripted-skill', 'scripts/helper.sh', '#!/bin/bash\necho hello');
+
+      const filePath = path.join(service.libraryPath, 'scripted-skill', 'scripts', 'helper.sh');
+      expect(fs.existsSync(filePath)).toBe(true);
+      expect(fs.readFileSync(filePath, 'utf-8')).toBe('#!/bin/bash\necho hello');
+    });
+
+    it('should overwrite an existing file', async () => {
+      await service.createSkill('overwrite-skill', { name: 'Overwrite', description: '' }, '# OW');
+      await service.writeSkillFile('overwrite-skill', 'notes.md', 'v1');
+      await service.writeSkillFile('overwrite-skill', 'notes.md', 'v2');
+
+      const filePath = path.join(service.libraryPath, 'overwrite-skill', 'notes.md');
+      expect(fs.readFileSync(filePath, 'utf-8')).toBe('v2');
+    });
+  });
+
+  describe('copyDirectory with nested subdirectories', () => {
+    it('should recursively copy directories containing subdirectories', async () => {
+      // Create a source skill with a nested subdirectory structure
+      await service.createSkill('nested-src', { name: 'Nested', description: 'nested dirs' }, '# Nested');
+      const srcDir = path.join(service.libraryPath, 'nested-src');
+      const subDir = path.join(srcDir, 'sub', 'deep');
+      fs.mkdirSync(subDir, { recursive: true });
+      fs.writeFileSync(path.join(subDir, 'deep-file.md'), '# Deep');
+      fs.writeFileSync(path.join(srcDir, 'sub', 'shallow.md'), '# Shallow');
+
+      // Duplicate should trigger copyDirectory with nested dirs
+      const dup = await service.duplicateSkill('nested-src', 'nested-dst');
+      expect(dup.id).toBe('nested-dst');
+
+      const destDir = path.join(service.libraryPath, 'nested-dst');
+      expect(fs.existsSync(path.join(destDir, 'sub', 'deep', 'deep-file.md'))).toBe(true);
+      expect(fs.readFileSync(path.join(destDir, 'sub', 'deep', 'deep-file.md'), 'utf-8')).toBe('# Deep');
+      expect(fs.existsSync(path.join(destDir, 'sub', 'shallow.md'))).toBe(true);
+    });
+  });
+
+  describe('resolveLibraryPath with tilde', () => {
+    it('should expand tilde in custom library path', () => {
+      // Set the mock path with tilde
+      mockLibraryPath = '~/custom-skills';
+      const customService = new StorageService();
+      expect(customService.libraryPath).toBe(path.join(os.homedir(), 'custom-skills'));
+      customService.dispose();
+      // Reset
+      mockLibraryPath = '';
+    });
+
+    it('should use default path when no custom path is set', () => {
+      mockLibraryPath = '';
+      const defaultService = new StorageService();
+      expect(defaultService.libraryPath).toBe(path.join(os.homedir(), '.skilldock', 'skills'));
+      defaultService.dispose();
+    });
+  });
 });

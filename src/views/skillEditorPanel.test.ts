@@ -208,15 +208,19 @@ function createMockWebviewPanel() {
   const panel = {
     webview: {
       html: '',
-      onDidReceiveMessage: vi.fn((cb: any) => {
+      onDidReceiveMessage: vi.fn((cb: any, _thisArg?: any, disposables?: any[]) => {
         messageHandler = cb;
-        return { dispose: () => {} };
+        const d = { dispose: () => {} };
+        if (disposables) { disposables.push(d); }
+        return d;
       }),
       postMessage: vi.fn(),
     },
-    onDidDispose: vi.fn((cb: any) => {
+    onDidDispose: vi.fn((cb: any, _thisArg?: any, disposables?: any[]) => {
       disposeHandler = cb;
-      return { dispose: () => {} };
+      const d = { dispose: () => {} };
+      if (disposables) { disposables.push(d); }
+      return d;
     }),
     reveal: vi.fn(),
     dispose: vi.fn(),
@@ -290,6 +294,33 @@ describe('SkillEditorPanel instantiation', () => {
     );
 
     expect(SkillEditorPanel.currentPanels.has('edit-me')).toBe(true);
+  });
+
+  it('should use activeTextEditor viewColumn when available', () => {
+    // Set activeTextEditor
+    (vscodeWindow as any).activeTextEditor = { viewColumn: 2 };
+
+    const mockStorageService = {
+      createSkill: vi.fn(),
+      onDidChange: vi.fn(() => ({ dispose: () => {} })),
+    } as any;
+
+    SkillEditorPanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockStorageService,
+      null,
+      true,
+    );
+
+    expect(vscodeWindow.createWebviewPanel).toHaveBeenCalledWith(
+      'skilldockEditor',
+      expect.any(String),
+      2,
+      expect.objectContaining({ enableScripts: true }),
+    );
+
+    // Reset
+    (vscodeWindow as any).activeTextEditor = undefined;
   });
 
   it('should reveal existing panel on second call', () => {
@@ -459,6 +490,33 @@ describe('SkillEditorPanel dispose', () => {
     disposeHandler();
 
     expect(SkillEditorPanel.currentPanels.size).toBe(0);
+  });
+
+  it('should be idempotent on double dispose', () => {
+    const mock = createMockWebviewPanel();
+    vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
+
+    const mockStorageService = {
+      createSkill: vi.fn(),
+      onDidChange: vi.fn(() => ({ dispose: () => {} })),
+    } as any;
+
+    SkillEditorPanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockStorageService,
+      null,
+      true,
+    );
+
+    expect(SkillEditorPanel.currentPanels.size).toBe(1);
+
+    const disposeHandler = mock.getDisposeHandler()!;
+    disposeHandler();
+    // Second dispose should not throw
+    disposeHandler();
+
+    expect(SkillEditorPanel.currentPanels.size).toBe(0);
+    expect(mock.panel.dispose).toHaveBeenCalledTimes(1);
   });
 });
 
