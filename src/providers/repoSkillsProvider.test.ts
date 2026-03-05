@@ -157,9 +157,9 @@ describe('RepoSkillsProvider', () => {
   });
 
   it('should support multiple format groups', async () => {
-    // Create skills in both .claude and .cursor
-    for (const dir of ['.claude', '.cursor']) {
-      const skillDir = path.join(tmpDir, dir, 'skills', 'my-skill');
+    // Create skills in two distinct skillsDir paths (.claude/skills and .github/skills)
+    for (const dir of ['.claude/skills', '.github/skills']) {
+      const skillDir = path.join(tmpDir, dir, 'my-skill');
       fs.mkdirSync(skillDir, { recursive: true });
       fs.writeFileSync(
         path.join(skillDir, 'SKILL.md'),

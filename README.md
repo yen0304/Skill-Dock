@@ -58,12 +58,29 @@ A full-featured webview panel for managing your skill library with search, impor
 
 Import skills from your library into the current workspace. Choose the target format:
 
-| Format | Directory | Description |
-|--------|-----------|-------------|
+| Format | Directory | Agent / Tool |
+|--------|-----------|--------------|
 | Claude | `.claude/skills/` | Claude Code / Claude Desktop |
-| Cursor | `.cursor/skills/` | Cursor IDE |
-| Codex | `.codex/skills/` | OpenAI Codex (with scaffold dirs) |
-| GitHub | `.github/skills/` | GitHub-based format |
+| Cursor | `.agents/skills/` | Cursor IDE |
+| Codex | `.agents/skills/` | OpenAI Codex |
+| GitHub | `.github/skills/` | GitHub Skills |
+| GitHub Copilot | `.agents/skills/` | GitHub Copilot |
+| Windsurf | `.windsurf/skills/` | Windsurf IDE |
+| Cline | `.agents/skills/` | Cline |
+| Roo Code | `.roo/skills/` | Roo Code |
+| Continue | `.continue/skills/` | Continue |
+| Augment | `.augment/skills/` | Augment |
+| OpenCode | `.agents/skills/` | OpenCode |
+| Goose | `.goose/skills/` | Goose |
+| Gemini CLI | `.agents/skills/` | Gemini CLI |
+| Amp | `.agents/skills/` | Amp |
+| Kilo Code | `.kilocode/skills/` | Kilo Code |
+| Junie | `.junie/skills/` | Junie |
+| Trae | `.trae/skills/` | Trae IDE |
+| Droid | `.factory/skills/` | Factory AI / Droid |
+| Kode | `.kode/skills/` | Kode |
+| OpenHands | `.openhands/skills/` | OpenHands |
+| Universal | `.agents/skills/` | Shared directory for multiple agents |
 
 Multi-select import supported. Save repo skills back to your library.
 

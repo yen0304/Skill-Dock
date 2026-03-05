@@ -99,7 +99,7 @@ describe('extension', () => {
       activate(mockContext);
 
       expect(workspace.createFileSystemWatcher).toHaveBeenCalledWith(
-        '**/{.claude,.cursor,.codex,.github}/skills/*/SKILL.md'
+        '**/{.claude/skills,.agents/skills,.github/skills,.windsurf/skills,.roo/skills,.continue/skills,.augment/skills,.goose/skills,.kilocode/skills,.junie/skills,.trae/skills,.factory/skills,.kode/skills,.openhands/skills}/**/SKILL.md'
       );
     });
 

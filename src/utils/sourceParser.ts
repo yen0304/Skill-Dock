@@ -79,13 +79,7 @@ export function parseSource(input: string): ParsedSource | null {
     return buildResult(host, sshMatch[2], sshMatch[3], undefined, undefined, trimmed);
   }
 
-  // 4. Shorthand: owner/repo
-  const shortMatch = trimmed.match(SHORTHAND_RE);
-  if (shortMatch) {
-    return buildResult('github', shortMatch[1], shortMatch[2], undefined, undefined, trimmed);
-  }
-
-  // 5. Local path (absolute or relative)
+  // 4. Local path (absolute or relative) — check before shorthand so ./foo isn't mistaken for owner/repo
   if (trimmed.startsWith('/') || trimmed.startsWith('.') || trimmed.startsWith('~')) {
     return {
       host: 'local',
@@ -97,6 +91,12 @@ export function parseSource(input: string): ParsedSource | null {
       raw: trimmed,
       isLocal: true,
     };
+  }
+
+  // 5. Shorthand: owner/repo
+  const shortMatch = trimmed.match(SHORTHAND_RE);
+  if (shortMatch) {
+    return buildResult('github', shortMatch[1], shortMatch[2], undefined, undefined, trimmed);
   }
 
   return null;
