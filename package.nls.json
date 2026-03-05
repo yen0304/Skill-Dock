@@ -36,5 +36,6 @@
   "config.defaultTarget.description": "Default target format when importing skills to a repo",
   "config.showRepoSkills.description": "Show the Repo Skills panel in the sidebar",
   "config.marketplaceSources.description": "Additional GitHub repository URLs to scan for agent skills in the Marketplace",
-  "config.librarySortBy.description": "Sort order for the skill library tree view (name, lastModified, author, mostUsed)"
+  "config.librarySortBy.description": "Sort order for the skill library tree view (name, lastModified, author, mostUsed)",
+  "config.installMode.description": "How skills are installed into repos: 'copy' creates independent copies, 'symlink' creates symlinks to a canonical copy"
 }

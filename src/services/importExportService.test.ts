@@ -89,9 +89,9 @@ describe('ImportExportService', () => {
       expect(content).toContain('Test Skill');
     });
 
-    it('should copy skill to .cursor/skills directory', async () => {
+    it('should copy skill to .agents/skills directory for cursor format', async () => {
       const targetDir = await service.importToRepo(sampleSkill, 'cursor');
-      expect(targetDir).toContain('.cursor');
+      expect(targetDir).toContain(path.join('.agents', 'skills'));
       expect(fs.existsSync(path.join(targetDir, 'SKILL.md'))).toBe(true);
     });
 
@@ -101,12 +101,10 @@ describe('ImportExportService', () => {
       expect(fs.existsSync(path.join(targetDir, 'SKILL.md'))).toBe(true);
     });
 
-    it('should create scaffold directories for codex format', async () => {
+    it('should copy skill to .agents/skills directory for codex format', async () => {
       const targetDir = await service.importToRepo(sampleSkill, 'codex');
-      expect(fs.existsSync(path.join(targetDir, 'agents'))).toBe(true);
-      expect(fs.existsSync(path.join(targetDir, 'scripts'))).toBe(true);
-      expect(fs.existsSync(path.join(targetDir, 'references'))).toBe(true);
-      expect(fs.existsSync(path.join(targetDir, 'assets'))).toBe(true);
+      expect(targetDir).toContain(path.join('.agents', 'skills'));
+      expect(fs.existsSync(path.join(targetDir, 'SKILL.md'))).toBe(true);
     });
 
     it('should throw when no workspace folder is open', async () => {

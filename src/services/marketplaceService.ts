@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as https from 'https';
+import * as zlib from 'zlib';
 import {
   MarketplaceSource,
   RemoteAdditionalFile,
@@ -16,17 +17,6 @@ interface CacheEntry<T> {
 }
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-/** A single item in the GitHub Git Trees API response */
-interface GitTreeItem {
-  path: string;
-  type: string;
-}
-
-/** Top-level shape of the GitHub Git Trees API response */
-interface GitTreeResponse {
-  tree?: GitTreeItem[];
-}
 
 /**
  * Service for browsing and installing skills from remote GitHub repos.
@@ -94,15 +84,36 @@ export class MarketplaceService {
       sources.map((src) => this.fetchSource(src, force))
     );
     const skills: RemoteSkill[] = [];
+    let failedCount = 0;
     for (const r of results) {
       if (r.status === 'fulfilled') {
         skills.push(...r.value);
+      } else {
+        failedCount++;
+        console.warn('[SkillDock] Source fetch failed:', r.reason);
       }
+    }
+    if (failedCount > 0 && skills.length === 0) {
+      const firstError = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+      const reason = firstError?.reason;
+      throw new Error(
+        vscode.l10n.t(
+          'All {0} source(s) failed to load. {1}',
+          String(failedCount),
+          reason instanceof Error ? reason.message : String(reason ?? ''),
+        )
+      );
     }
     return skills;
   }
 
-  /** Fetch skills from a single source. */
+  /**
+   * Fetch skills from a single source.
+   *
+   * Downloads the entire repository as a tar.gz archive in a single HTTP
+   * request, then parses all SKILL.md files from the in-memory archive.
+   * This is dramatically faster than fetching each file individually.
+   */
   async fetchSource(source: MarketplaceSource, force = false): Promise<RemoteSkill[]> {
     // Check cache
     if (!force) {
@@ -112,39 +123,73 @@ export class MarketplaceService {
       }
     }
 
-    // Resolve token once per fetch to keep HTTP helpers sync
     const token = await this._resolveToken();
 
-    // 1. Get the repository tree
-    const treePaths = await this._fetchTree(source, token);
+    // Download the entire repo as a tarball (single HTTP request)
+    const repoFiles = await this._fetchArchive(source, token);
 
-    // 2. Find SKILL.md files
-    const skillMdPaths = treePaths.filter((p) => {
+    // Find SKILL.md files, respecting the source path prefix
+    const prefix = source.path ? source.path.replace(/\/+$/, '') + '/' : '';
+    const allPaths = [...repoFiles.keys()];
+    const skillMdPaths = allPaths.filter((p) => {
       const lower = p.toLowerCase();
-      return lower.endsWith('/skill.md') || lower === 'skill.md';
+      const isSkillMd = lower.endsWith('/skill.md') || lower === 'skill.md';
+      return isSkillMd && (!prefix || p.startsWith(prefix));
     });
 
-    // Filter by the source path prefix
-    const prefix = source.path ? source.path.replace(/\/+$/, '') + '/' : '';
-    const filtered = prefix
-      ? skillMdPaths.filter((p) => p.startsWith(prefix))
-      : skillMdPaths;
-
-    // 3. Fetch each SKILL.md content (pass full tree so siblings can be collected)
-    const results = await Promise.allSettled(
-      filtered.map((mdPath) => this._fetchSkillMd(source, mdPath, token, treePaths))
-    );
-
+    // Parse each SKILL.md from the in-memory archive (no additional HTTP calls)
     const skills: RemoteSkill[] = [];
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value) {
-        skills.push(r.value);
+    for (const mdPath of skillMdPaths) {
+      const content = repoFiles.get(mdPath);
+      if (!content) { continue; }
+
+      const { metadata, body } = parseFrontmatter(content);
+      if (!metadata.name) {
+        const parts = mdPath.split('/');
+        const dir = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+        metadata.name = dir
+          .replace(/-/g, ' ')
+          .replace(/\b\w/g, (c) => c.toUpperCase());
       }
+      if (!metadata.description) {
+        metadata.description = '';
+      }
+
+      const parts = mdPath.split('/');
+      const dirName = parts.length >= 2 ? parts[parts.length - 2] : source.repo;
+      const skillId = MarketplaceService.makeSkillId(source, dirName);
+
+      // Collect sibling files in the same skill directory
+      const skillDir = mdPath.substring(0, mdPath.lastIndexOf('/'));
+      const additionalFiles: RemoteAdditionalFile[] = skillDir
+        ? allPaths
+            .filter((p) => p !== mdPath && p.startsWith(skillDir + '/'))
+            .map((p) => ({
+              relativePath: p.substring(skillDir.length + 1),
+              downloadUrl: `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.branch}/${p}`,
+            }))
+        : [];
+
+      const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.branch}/${mdPath}`;
+      skills.push({
+        source,
+        id: skillId,
+        metadata,
+        body,
+        repoPath: mdPath,
+        downloadUrl: rawUrl,
+        additionalFiles: additionalFiles.length > 0 ? additionalFiles : undefined,
+      });
     }
 
-    // Update cache
     this._cache.set(source.id, { data: skills, timestamp: Date.now() });
     return skills;
+  }
+
+  /** Fetch the raw content of a remote file by its download URL. */
+  async fetchFileContent(downloadUrl: string): Promise<string> {
+    const token = await this._resolveToken();
+    return this._httpGetText(downloadUrl, token);
   }
 
   /** Install a remote skill to the local library. */
@@ -222,67 +267,74 @@ export class MarketplaceService {
     return legacy?.trim() || undefined;
   }
 
-  /** Fetch the recursive tree listing for a repo. Returns flat file paths. */
-  private async _fetchTree(source: MarketplaceSource, token?: string): Promise<string[]> {
-    const url = `https://api.github.com/repos/${source.owner}/${source.repo}/git/trees/${source.branch}?recursive=1`;
-    const json = await this._httpGetJson(url, token) as GitTreeResponse;
+  // ------------------------------------------------------------------
+  // Archive-based fetching (single HTTP request per source)
+  // ------------------------------------------------------------------
 
-    if (!json.tree || !Array.isArray(json.tree)) {
-      return [];
-    }
-
-    return json.tree
-      .filter((item) => item.type === 'blob')
-      .map((item) => item.path);
+  /** Download the repo as a tar.gz archive and extract file contents. */
+  private async _fetchArchive(source: MarketplaceSource, token?: string): Promise<Map<string, string>> {
+    const url = `https://codeload.github.com/${source.owner}/${source.repo}/tar.gz/refs/heads/${source.branch}`;
+    const compressed = await this._httpGetBuffer(url, token);
+    const decompressed = zlib.gunzipSync(compressed);
+    const files = MarketplaceService.parseTar(decompressed);
+    return files;
   }
 
-  /** Fetch raw content of a SKILL.md and return a RemoteSkill. */
-  private async _fetchSkillMd(
-    source: MarketplaceSource,
-    repoPath: string,
-    token?: string,
-    allPaths: string[] = [],
-  ): Promise<RemoteSkill | null> {
-    const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.branch}/${repoPath}`;
-    const content = await this._httpGetText(rawUrl, token);
+  /**
+   * Parse a tar buffer and return a map of relative-path → UTF-8 content.
+   * Strips the root directory that GitHub adds to archive entries.
+   */
+  static parseTar(buffer: Buffer): Map<string, string> {
+    const files = new Map<string, string>();
+    let offset = 0;
+    let pendingPath: string | null = null;
 
-    const { metadata, body } = parseFrontmatter(content);
-    if (!metadata.name) {
-      // Derive name from directory
-      const parts = repoPath.split('/');
-      const dir = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
-      metadata.name = dir
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+    while (offset + 512 <= buffer.length) {
+      const header = buffer.subarray(offset, offset + 512);
+      if (header[0] === 0) { break; } // end-of-archive
+
+      // Name (bytes 0–99) + optional UStar prefix (bytes 345–499)
+      let name = header.subarray(0, 100).toString('utf-8').replace(/\0+$/, '');
+      const ustarPrefix = header.subarray(345, 500).toString('utf-8').replace(/\0+$/, '');
+      if (ustarPrefix) { name = ustarPrefix + '/' + name; }
+
+      // Size in octal (bytes 124–135)
+      const size = parseInt(
+        header.subarray(124, 136).toString('utf-8').replace(/\0+$/, '').trim(),
+        8,
+      ) || 0;
+
+      // Type flag (byte 156)
+      const type = String.fromCharCode(header[156]);
+
+      offset += 512; // advance past header
+
+      if (type === 'L') {
+        // GNU long-name extension
+        pendingPath = buffer.subarray(offset, offset + size).toString('utf-8').replace(/\0+$/, '');
+      } else if (type === 'x' || type === 'g') {
+        // pax extended header — look for path=
+        const pax = buffer.subarray(offset, offset + size).toString('utf-8');
+        const m = pax.match(/\d+ path=(.+)\n/);
+        if (m) { pendingPath = m[1]; }
+      } else {
+        const finalName = pendingPath || name;
+        pendingPath = null;
+        if ((type === '0' || type === '' || type === '\0') && size > 0) {
+          // Regular file — strip the root directory GitHub adds (e.g. "repo-sha/")
+          const slash = finalName.indexOf('/');
+          const rel = slash >= 0 ? finalName.substring(slash + 1) : finalName;
+          if (rel) {
+            files.set(rel, buffer.subarray(offset, offset + size).toString('utf-8'));
+          }
+        }
+      }
+
+      // Data blocks are aligned to 512-byte boundaries
+      offset += Math.ceil(size / 512) * 512;
     }
-    if (!metadata.description) {
-      metadata.description = '';
-    }
 
-    // Derive skill id from directory name
-    const parts = repoPath.split('/');
-    const dirName = parts.length >= 2 ? parts[parts.length - 2] : source.repo;
-
-    // Collect sibling files in the same skill directory (scripts, references, templates, etc.)
-    const skillDir = repoPath.substring(0, repoPath.lastIndexOf('/'));
-    const additionalFiles: RemoteAdditionalFile[] = skillDir
-      ? allPaths
-          .filter((p) => p !== repoPath && p.startsWith(skillDir + '/'))
-          .map((p) => ({
-            relativePath: p.substring(skillDir.length + 1),
-            downloadUrl: `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.branch}/${p}`,
-          }))
-      : [];
-
-    return {
-      source,
-      id: dirName,
-      metadata,
-      body,
-      repoPath,
-      downloadUrl: rawUrl,
-      additionalFiles: additionalFiles.length > 0 ? additionalFiles : undefined,
-    };
+    return files;
   }
 
   // ------------------------------------------------------------------
@@ -309,12 +361,18 @@ export class MarketplaceService {
     return new Error(`HTTP ${statusCode} for ${url}`);
   }
 
-  /** Perform an HTTPS GET and return parsed JSON. */
-  private _httpGetJson(url: string, token?: string): Promise<unknown> {
+  /** HTTP request timeout in ms */
+  private static readonly HTTP_TIMEOUT_MS = 15_000;
+
+  /** Longer timeout for archive downloads (full repo tarball) */
+  private static readonly ARCHIVE_TIMEOUT_MS = 30_000;
+
+  /** Perform an HTTPS GET and return a raw Buffer (used for archive downloads). */
+  private _httpGetBuffer(url: string, token?: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      const req = https.get(url, { headers: this._getHeaders('application/json', token) }, (res) => {
+      const req = https.get(url, { headers: this._getHeaders(undefined, token), timeout: MarketplaceService.ARCHIVE_TIMEOUT_MS }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          this._httpGetJson(res.headers.location, token).then(resolve, reject);
+          this._httpGetBuffer(res.headers.location, token).then(resolve, reject);
           return;
         }
         if (res.statusCode && res.statusCode >= 400) {
@@ -323,16 +381,11 @@ export class MarketplaceService {
           return;
         }
         const chunks: Buffer[] = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
-          } catch (e) {
-            reject(e);
-          }
-        });
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
         res.on('error', reject);
       });
+      req.on('timeout', () => { req.destroy(); reject(new Error(`Request timed out: ${url}`)); });
       req.on('error', reject);
       req.end();
     });
@@ -341,7 +394,7 @@ export class MarketplaceService {
   /** Perform an HTTPS GET and return text. */
   private _httpGetText(url: string, token?: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const req = https.get(url, { headers: this._getHeaders(undefined, token) }, (res) => {
+      const req = https.get(url, { headers: this._getHeaders(undefined, token), timeout: MarketplaceService.HTTP_TIMEOUT_MS }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           this._httpGetText(res.headers.location, token).then(resolve, reject);
           return;
@@ -356,6 +409,7 @@ export class MarketplaceService {
         res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
         res.on('error', reject);
       });
+      req.on('timeout', () => { req.destroy(); reject(new Error(`Request timed out: ${url}`)); });
       req.on('error', reject);
       req.end();
     });
@@ -364,6 +418,19 @@ export class MarketplaceService {
   // ------------------------------------------------------------------
   // URL parsing
   // ------------------------------------------------------------------
+
+  /**
+   * Build a namespaced skill ID from a source and a directory name.
+   * This avoids collisions when different repos contain skills with the same dir name.
+   *
+   * Format: "owner--repo--dirName" or "owner--repo--path--dirName" for sources with sub-paths.
+   */
+  static makeSkillId(source: MarketplaceSource, dirName: string): string {
+    const prefix = source.path
+      ? `${source.owner}--${source.repo}--${source.path.replace(/\//g, '--')}`
+      : `${source.owner}--${source.repo}`;
+    return `${prefix}--${dirName}`;
+  }
 
   /**
    * Parse a GitHub URL into a MarketplaceSource, or null if invalid.

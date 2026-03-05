@@ -118,5 +118,17 @@
   "GitHub token saved securely.": "GitHub トークンをセキュアに保存しました。",
   "GitHub token cleared.": "GitHub トークンをクリアしました。",
   "Enter your GitHub personal access token (leave blank to clear):": "GitHub 個人アクセストークンを入力してください（空白でクリア）：",
-  "Installed {0} time(s)": "{0} 回インストール済み"
+  "Installed {0} time(s)": "{0} 回インストール済み",
+  "View File": "ファイルを表示",
+  "Close": "閉じる",
+  "File Preview": "ファイルプレビュー",
+  "Loading file...": "ファイルを読み込み中...",
+  "Failed to load file: {0}": "ファイルの読み込み失敗：{0}",
+  "Failed to load marketplace": "マーケットプレイスの読み込みに失敗しました",
+  "Invalid skill ID: path traversal detected": "無効なスキルID：パストラバーサルが検出されました",
+  "Symlink (Recommended)": "シンボリックリンク（推奨）",
+  "Creates symlinks to a canonical copy. Single source of truth, easy updates.": "正規コピーへのシンボリックリンクを作成します。一元管理で更新が簡単です。",
+  "Copy": "コピー",
+  "Creates independent copies. Use when symlinks are not supported.": "独立したコピーを作成します。シンボリックリンクがサポートされていない場合に使用してください。",
+  "Select install mode": "インストールモードを選択"
 }

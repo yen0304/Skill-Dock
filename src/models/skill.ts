@@ -35,9 +35,31 @@ export interface Skill {
 }
 
 /**
- * Supported target formats for importing skills into repos
+ * Supported target formats for importing skills into repos.
+ * Based on the open agent skills ecosystem (https://agentskills.io/).
  */
-export type TargetFormat = 'claude' | 'cursor' | 'codex' | 'github';
+export type TargetFormat =
+  | 'claude'
+  | 'cursor'
+  | 'codex'
+  | 'github'
+  | 'github-copilot'
+  | 'windsurf'
+  | 'cline'
+  | 'roo'
+  | 'continue'
+  | 'augment'
+  | 'opencode'
+  | 'goose'
+  | 'gemini-cli'
+  | 'amp'
+  | 'kilo'
+  | 'junie'
+  | 'trae'
+  | 'droid'
+  | 'kode'
+  | 'openhands'
+  | 'universal';
 
 export interface TargetFormatConfig {
   id: TargetFormat;
@@ -144,18 +166,17 @@ export const TARGET_FORMATS: Record<TargetFormat, TargetFormatConfig> = {
   },
   cursor: {
     id: 'cursor',
-    label: 'Cursor (.cursor/skills)',
+    label: 'Cursor (.agents/skills)',
     description: 'Cursor IDE skill format',
-    skillsDir: '.cursor/skills',
+    skillsDir: '.agents/skills',
     usesSkillMd: true,
   },
   codex: {
     id: 'codex',
-    label: 'Codex (.codex/skills)',
-    description: 'OpenAI Codex skill format with optional scripts/references',
-    skillsDir: '.codex/skills',
+    label: 'Codex (.agents/skills)',
+    description: 'OpenAI Codex skill format',
+    skillsDir: '.agents/skills',
     usesSkillMd: true,
-    scaffoldDirs: ['agents', 'scripts', 'references', 'assets'],
   },
   github: {
     id: 'github',
@@ -164,4 +185,131 @@ export const TARGET_FORMATS: Record<TargetFormat, TargetFormatConfig> = {
     skillsDir: '.github/skills',
     usesSkillMd: true,
   },
+  'github-copilot': {
+    id: 'github-copilot',
+    label: 'GitHub Copilot (.agents/skills)',
+    description: 'GitHub Copilot agent skills',
+    skillsDir: '.agents/skills',
+    usesSkillMd: true,
+  },
+  windsurf: {
+    id: 'windsurf',
+    label: 'Windsurf (.windsurf/skills)',
+    description: 'Windsurf IDE skill format',
+    skillsDir: '.windsurf/skills',
+    usesSkillMd: true,
+  },
+  cline: {
+    id: 'cline',
+    label: 'Cline (.agents/skills)',
+    description: 'Cline coding agent skills',
+    skillsDir: '.agents/skills',
+    usesSkillMd: true,
+  },
+  roo: {
+    id: 'roo',
+    label: 'Roo Code (.roo/skills)',
+    description: 'Roo Code skill format',
+    skillsDir: '.roo/skills',
+    usesSkillMd: true,
+  },
+  continue: {
+    id: 'continue',
+    label: 'Continue (.continue/skills)',
+    description: 'Continue IDE skill format',
+    skillsDir: '.continue/skills',
+    usesSkillMd: true,
+  },
+  augment: {
+    id: 'augment',
+    label: 'Augment (.augment/skills)',
+    description: 'Augment coding agent skills',
+    skillsDir: '.augment/skills',
+    usesSkillMd: true,
+  },
+  opencode: {
+    id: 'opencode',
+    label: 'OpenCode (.agents/skills)',
+    description: 'OpenCode skill format',
+    skillsDir: '.agents/skills',
+    usesSkillMd: true,
+  },
+  goose: {
+    id: 'goose',
+    label: 'Goose (.goose/skills)',
+    description: 'Goose coding agent skills',
+    skillsDir: '.goose/skills',
+    usesSkillMd: true,
+  },
+  'gemini-cli': {
+    id: 'gemini-cli',
+    label: 'Gemini CLI (.agents/skills)',
+    description: 'Gemini CLI skill format',
+    skillsDir: '.agents/skills',
+    usesSkillMd: true,
+  },
+  amp: {
+    id: 'amp',
+    label: 'Amp (.agents/skills)',
+    description: 'Amp skill format',
+    skillsDir: '.agents/skills',
+    usesSkillMd: true,
+  },
+  kilo: {
+    id: 'kilo',
+    label: 'Kilo Code (.kilocode/skills)',
+    description: 'Kilo Code skill format',
+    skillsDir: '.kilocode/skills',
+    usesSkillMd: true,
+  },
+  junie: {
+    id: 'junie',
+    label: 'Junie (.junie/skills)',
+    description: 'Junie coding agent skills',
+    skillsDir: '.junie/skills',
+    usesSkillMd: true,
+  },
+  trae: {
+    id: 'trae',
+    label: 'Trae (.trae/skills)',
+    description: 'Trae IDE skill format',
+    skillsDir: '.trae/skills',
+    usesSkillMd: true,
+  },
+  droid: {
+    id: 'droid',
+    label: 'Droid (.factory/skills)',
+    description: 'Factory AI / Droid skill format',
+    skillsDir: '.factory/skills',
+    usesSkillMd: true,
+  },
+  kode: {
+    id: 'kode',
+    label: 'Kode (.kode/skills)',
+    description: 'Kode skill format',
+    skillsDir: '.kode/skills',
+    usesSkillMd: true,
+  },
+  openhands: {
+    id: 'openhands',
+    label: 'OpenHands (.openhands/skills)',
+    description: 'OpenHands skill format',
+    skillsDir: '.openhands/skills',
+    usesSkillMd: true,
+  },
+  universal: {
+    id: 'universal',
+    label: 'Universal (.agents/skills)',
+    description: 'Universal agent skills directory shared by multiple agents',
+    skillsDir: '.agents/skills',
+    usesSkillMd: true,
+  },
 };
+
+/**
+ * All unique skill directory paths that agents use in repos.
+ * Used for scanning workspace skills and file watchers.
+ */
+export const ALL_SKILL_DIRS: string[] = [
+  ...new Set(Object.values(TARGET_FORMATS).map((c) => c.skillsDir)),
+];

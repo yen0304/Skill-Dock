@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { Skill, TARGET_FORMATS, TargetFormat } from '../models/skill';
+import { Skill, TARGET_FORMATS, TargetFormat, ALL_SKILL_DIRS } from '../models/skill';
 import { parseFrontmatter } from '../utils/skillParser';
 import { SkillTreeItem } from './skillLibraryProvider';
 
@@ -20,16 +20,25 @@ async function pathExists(p: string): Promise<boolean> {
 }
 
 /**
- * TreeView item for a format group header
+ * TreeView item for a format group header.
+ * Groups by unique skillsDir path rather than by agent format, since
+ * many agents (Cursor, Codex, Cline, Copilot, etc.) share `.agents/skills`.
  */
 class FormatGroupItem extends vscode.TreeItem {
   constructor(
     public readonly format: TargetFormat,
+    /** All formats that share this skillsDir */
+    public readonly relatedFormats: TargetFormat[],
     public readonly skillCount: number,
     public readonly workspaceRoot: string,
   ) {
     const config = TARGET_FORMATS[format];
-    super(config.label, vscode.TreeItemCollapsibleState.Expanded);
+    // Build a concise label showing the dir and which agents share it
+    const agentNames = relatedFormats.map((f) => TARGET_FORMATS[f].id);
+    const label = agentNames.length > 1
+      ? `${config.skillsDir} (${agentNames.slice(0, 3).join(', ')}${agentNames.length > 3 ? '…' : ''})`
+      : config.label;
+    super(label, vscode.TreeItemCollapsibleState.Expanded);
     this.description = vscode.l10n.t('{0} skill(s)', skillCount);
     this.contextValue = 'formatGroup';
     this.iconPath = new vscode.ThemeIcon('folder');
@@ -82,16 +91,28 @@ export class RepoSkillsProvider implements vscode.TreeDataProvider<vscode.TreeIt
 
     const workspaceRoot = workspaceFolders[0].uri.fsPath;
 
-    // Top level: show format groups
+    // Top level: group by unique skillsDir to avoid scanning the same path multiple times
     if (!element) {
       const items: vscode.TreeItem[] = [];
+      const seen = new Set<string>();
 
-      for (const [formatKey, config] of Object.entries(TARGET_FORMATS)) {
-        const skillsDir = path.join(workspaceRoot, config.skillsDir);
-        if (await pathExists(skillsDir)) {
-          const skills = await this.scanSkillsDir(skillsDir);
+      // Group formats by their skillsDir
+      const dirToFormats = new Map<string, TargetFormat[]>();
+      for (const [key, config] of Object.entries(TARGET_FORMATS)) {
+        const existing = dirToFormats.get(config.skillsDir) ?? [];
+        existing.push(key as TargetFormat);
+        dirToFormats.set(config.skillsDir, existing);
+      }
+
+      for (const [skillsDir, formats] of dirToFormats) {
+        if (seen.has(skillsDir)) { continue; }
+        seen.add(skillsDir);
+
+        const fullDir = path.join(workspaceRoot, skillsDir);
+        if (await pathExists(fullDir)) {
+          const skills = await this.scanSkillsDir(fullDir);
           if (skills.length > 0) {
-            items.push(new FormatGroupItem(formatKey as TargetFormat, skills.length, workspaceRoot));
+            items.push(new FormatGroupItem(formats[0], formats, skills.length, workspaceRoot));
           }
         }
       }

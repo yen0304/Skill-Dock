@@ -653,6 +653,130 @@ describe('MarketplacePanel message handlers', () => {
     expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
   });
 
+  it('should handle previewFile message — success', async () => {
+    const skill = {
+      id: 'file-preview-skill',
+      metadata: { name: 'FilePreview', description: 'desc', author: 'a', version: '1', tags: [] },
+      source: { id: 'anthropic', label: 'Anthropic' },
+      repoPath: 'skills/file-preview',
+      body: '# Content',
+      additionalFiles: [
+        { relativePath: 'reference.md', downloadUrl: 'https://raw.example.com/reference.md' },
+        { relativePath: 'scripts/helper.sh', downloadUrl: 'https://raw.example.com/helper.sh' },
+      ],
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      fetchFileContent: vi.fn().mockResolvedValue('# Reference Doc\n\nSome content'),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'previewFile', sourceId: 'anthropic', repoPath: 'skills/file-preview', filePath: 'reference.md' });
+
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const filePreviewCalls = calls.filter((c: any) => c[0]?.command === 'showFilePreview');
+    expect(filePreviewCalls).toHaveLength(1);
+    expect(filePreviewCalls[0][0].fileName).toBe('reference.md');
+    expect(filePreviewCalls[0][0].isMarkdown).toBe(true);
+    expect(filePreviewCalls[0][0].content).toContain('Reference Doc');
+  });
+
+  it('should handle previewFile for non-markdown files', async () => {
+    const skill = {
+      id: 'sh-preview-skill',
+      metadata: { name: 'ShPreview', description: 'desc', author: 'a', version: '1', tags: [] },
+      source: { id: 'anthropic', label: 'Anthropic' },
+      repoPath: 'skills/sh-preview',
+      body: '# Content',
+      additionalFiles: [
+        { relativePath: 'scripts/helper.sh', downloadUrl: 'https://raw.example.com/helper.sh' },
+      ],
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      fetchFileContent: vi.fn().mockResolvedValue('#!/bin/bash\necho hello'),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'previewFile', sourceId: 'anthropic', repoPath: 'skills/sh-preview', filePath: 'scripts/helper.sh' });
+
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const filePreviewCalls = calls.filter((c: any) => c[0]?.command === 'showFilePreview');
+    expect(filePreviewCalls).toHaveLength(1);
+    expect(filePreviewCalls[0][0].fileName).toBe('scripts/helper.sh');
+    expect(filePreviewCalls[0][0].isMarkdown).toBe(false);
+    expect(filePreviewCalls[0][0].content).toBe('#!/bin/bash\necho hello');
+  });
+
+  it('should handle previewFile — skill not found', async () => {
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([]),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'previewFile', sourceId: 'anthropic', repoPath: 'nonexistent', filePath: 'ref.md' });
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const filePreviewCalls = calls.filter((c: any) => c[0]?.command === 'showFilePreview');
+    expect(filePreviewCalls).toHaveLength(0);
+  });
+
+  it('should handle previewFile — file path not in additionalFiles', async () => {
+    const skill = {
+      id: 'file-mismatch-skill',
+      metadata: { name: 'Mismatch', description: 'desc', author: 'a', version: '1', tags: [] },
+      source: { id: 'anthropic', label: 'Anthropic' },
+      repoPath: 'skills/mismatch',
+      body: '# Content',
+      additionalFiles: [
+        { relativePath: 'reference.md', downloadUrl: 'https://raw.example.com/reference.md' },
+      ],
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      fetchFileContent: vi.fn().mockResolvedValue('should not be called'),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'previewFile', sourceId: 'anthropic', repoPath: 'skills/mismatch', filePath: 'nonexistent.txt' });
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const filePreviewCalls = calls.filter((c: any) => c[0]?.command === 'showFilePreview');
+    expect(filePreviewCalls).toHaveLength(0);
+  });
+
+  it('should handle previewFile — skill has no additionalFiles', async () => {
+    const skill = {
+      id: 'no-files-skill',
+      metadata: { name: 'NoFiles', description: 'desc', author: 'a', version: '1', tags: [] },
+      source: { id: 'anthropic', label: 'Anthropic' },
+      repoPath: 'skills/no-files',
+      body: '# Content',
+    };
+
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockResolvedValue([skill]),
+      fetchFileContent: vi.fn().mockResolvedValue('should not be called'),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'previewFile', sourceId: 'anthropic', repoPath: 'skills/no-files', filePath: 'ref.md' });
+    const calls = mock.panel.webview.postMessage.mock.calls;
+    const filePreviewCalls = calls.filter((c: any) => c[0]?.command === 'showFilePreview');
+    expect(filePreviewCalls).toHaveLength(0);
+  });
+
+  it('should handle previewFile — error', async () => {
+    const { mock } = setupPanel({
+      fetchAll: vi.fn().mockRejectedValue(new Error('network error')),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'previewFile', sourceId: 'anthropic', repoPath: 'skills/x', filePath: 'ref.md' });
+    expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+  });
+
   it('should show error when loadSkills fails', async () => {
     const { mock } = setupPanel({
       fetchAll: vi.fn().mockRejectedValue(new Error('API rate limit')),

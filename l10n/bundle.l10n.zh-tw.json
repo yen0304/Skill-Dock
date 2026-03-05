@@ -118,5 +118,17 @@
   "GitHub token saved securely.": "GitHub Token 已安全儲存。",
   "GitHub token cleared.": "GitHub Token 已清除。",
   "Enter your GitHub personal access token (leave blank to clear):": "輸入您的 GitHub 個人存取權杖（留空以清除）：",
-  "Installed {0} time(s)": "已安裝 {0} 次"
+  "Installed {0} time(s)": "已安裝 {0} 次",
+  "View File": "檢視檔案",
+  "Close": "關閉",
+  "File Preview": "檔案預覽",
+  "Loading file...": "載入檔案中...",
+  "Failed to load file: {0}": "載入檔案失敗：{0}",
+  "Failed to load marketplace": "市集載入失敗",
+  "Invalid skill ID: path traversal detected": "無效的 Skill ID：偵測到路徑穿越攻擊",
+  "Symlink (Recommended)": "符號連結（建議）",
+  "Creates symlinks to a canonical copy. Single source of truth, easy updates.": "建立指向規範副本的符號連結。單一來源，易於更新。",
+  "Copy": "複製",
+  "Creates independent copies. Use when symlinks are not supported.": "建立獨立副本。當不支援符號連結時使用。",
+  "Select install mode": "選擇安裝模式"
 }

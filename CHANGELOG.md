@@ -5,6 +5,19 @@ All notable changes to the Skill Dock extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-03-05
+
+### Changed
+
+- **Tarball-based fetching**: Marketplace now downloads each source as a single tar.gz archive via `codeload.github.com` instead of making individual HTTP requests per file. This reduces 256+ network calls to just 3 (one per built-in source) and dramatically improves load speed.
+- **Skill detail preview**: Marketplace preview now shows bundled file list with per-file icons, inline file preview with Markdown rendering and syntax highlighting for code files.
+- **Source filtering**: Marketplace toolbar now includes a source filter dropdown to show skills from a specific source.
+- **Error handling**: Added 60-second load timeout, `loadError` state in webview, and toast notifications for install/update/preview failures.
+
+### Fixed
+
+- **Webview SyntaxError**: Fixed `'\n'` inside a template literal being evaluated to a real newline, which broke the entire webview script and caused the marketplace to spin forever on "Loading...".
+
 ## [0.6.1] - 2026-03-03
 
 ### Added

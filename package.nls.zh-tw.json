@@ -36,5 +36,6 @@
   "config.defaultTarget.description": "匯入 Skill 到專案時的預設目標格式",
   "config.showRepoSkills.description": "在側邊欄顯示專案 Skills 面板",
   "config.marketplaceSources.description": "在市集中掃描 Agent Skills 的額外 GitHub 儲存庫 URL",
-  "config.librarySortBy.description": "Skill 管理庫樹狀圖的排序方式（name、lastModified、author、mostUsed）"
+  "config.librarySortBy.description": "Skill 管理庫樹狀圖的排序方式（name、lastModified、author、mostUsed）",
+  "config.installMode.description": "Skills 匯入到專案的方式：'copy' 建立獨立副本，'symlink' 建立指向規範副本的符號連結"
 }

@@ -9,6 +9,7 @@ import { ManagerPanel } from './views/managerPanel';
 import { MarketplacePanel } from './views/marketplacePanel';
 import { MarketplaceTreeProvider, MarketplaceSourceItem } from './providers/marketplaceTreeProvider';
 import { Skill } from './models/skill';
+import { ALL_SKILL_DIRS } from './models/skill';
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('SkillDock: Activating extension');
@@ -446,7 +447,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // ===========================================
   // Watch for workspace changes
   // ===========================================
-  const watcher = vscode.workspace.createFileSystemWatcher('**/{.claude,.cursor,.codex,.github}/skills/*/SKILL.md');
+  // Build watcher glob from all known agent skill directories
+  const watcherGlob = `**/{${ALL_SKILL_DIRS.join(',')}}/**/SKILL.md`;
+  const watcher = vscode.workspace.createFileSystemWatcher(watcherGlob);
   watcher.onDidChange(() => repoSkillsProvider.refresh());
   watcher.onDidCreate(() => repoSkillsProvider.refresh());
   watcher.onDidDelete(() => repoSkillsProvider.refresh());

@@ -30,6 +30,8 @@ function getMarketplaceStrings() {
     previewLoadingBody: vscode.l10n.t('Loading content...'),
     selectAll: vscode.l10n.t('Select All'),
     deselectAll: vscode.l10n.t('Deselect All'),
+    loadingFile: vscode.l10n.t('Loading file...'),
+    loadError: vscode.l10n.t('Failed to load marketplace'),
   };
 }
 
@@ -71,6 +73,9 @@ export class MarketplacePanel {
             break;
           case 'preview':
             await this._handlePreview(msg.sourceId, msg.repoPath);
+            break;
+          case 'previewFile':
+            await this._handlePreviewFile(msg.sourceId, msg.repoPath, msg.filePath);
             break;
           case 'addSource':
             await this._handleAddSource();
@@ -132,14 +137,25 @@ export class MarketplacePanel {
   // ------------------------------------------------------------------
 
   private async _loadSkills(force: boolean): Promise<void> {
+    const LOAD_TIMEOUT_MS = 60_000; // 60s safety net
+
     try {
       this._postMessage({ command: 'loading' });
 
-      const [skills, installedIds, installedVersions] = await Promise.all([
+      const fetchPromise = Promise.all([
         this.marketplaceService.fetchAll(force),
         this.marketplaceService.getInstalledIds(),
         this.marketplaceService.getInstalledVersionMap(),
       ]);
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(vscode.l10n.t('Loading timed out. Check your network connection or set a GitHub Token to increase rate limits.'))),
+          LOAD_TIMEOUT_MS,
+        ),
+      );
+
+      const [skills, installedIds, installedVersions] = await Promise.race([fetchPromise, timeoutPromise]);
 
       const sources = this.marketplaceService.getSources();
 
@@ -178,9 +194,11 @@ export class MarketplacePanel {
         this._pendingFilter = undefined;
       }
     } catch (err) {
+      const errStr = String(err instanceof Error ? err.message : err);
       vscode.window.showErrorMessage(
-        vscode.l10n.t('Failed to load marketplace: {0}', String(err))
+        vscode.l10n.t('Failed to load marketplace: {0}', errStr)
       );
+      this._postMessage({ command: 'loadError', error: errStr });
     }
   }
 
@@ -217,9 +235,9 @@ export class MarketplacePanel {
         hasUpdateMap,
       });
     } catch (err) {
-      vscode.window.showErrorMessage(
-        vscode.l10n.t('Install failed: {0}', String(err))
-      );
+      const errMsg = vscode.l10n.t('Install failed: {0}', String(err));
+      vscode.window.showErrorMessage(errMsg);
+      this._postMessage({ command: 'toast', message: errMsg, type: 'error' });
     }
   }
 
@@ -257,9 +275,9 @@ export class MarketplacePanel {
         hasUpdateMap,
       });
     } catch (err) {
-      vscode.window.showErrorMessage(
-        vscode.l10n.t('Install failed: {0}', String(err))
-      );
+      const errMsg = vscode.l10n.t('Install failed: {0}', String(err));
+      vscode.window.showErrorMessage(errMsg);
+      this._postMessage({ command: 'toast', message: errMsg, type: 'error' });
     }
   }
 
@@ -292,9 +310,36 @@ export class MarketplacePanel {
         },
       });
     } catch (err) {
-      vscode.window.showErrorMessage(
-        vscode.l10n.t('Failed to preview skill: {0}', String(err))
+      const errMsg = vscode.l10n.t('Failed to preview skill: {0}', String(err));
+      vscode.window.showErrorMessage(errMsg);
+      this._postMessage({ command: 'toast', message: errMsg, type: 'error' });
+    }
+  }
+
+  private async _handlePreviewFile(sourceId: string, repoPath: string, filePath: string): Promise<void> {
+    try {
+      const skills = await this.marketplaceService.fetchAll(false);
+      const skill = skills.find(
+        (s) => s.source.id === sourceId && s.repoPath === repoPath
       );
+      if (!skill?.additionalFiles) { return; }
+
+      const file = skill.additionalFiles.find((f) => f.relativePath === filePath);
+      if (!file) { return; }
+
+      const content = await this.marketplaceService.fetchFileContent(file.downloadUrl);
+
+      const isMarkdown = /\.md$/i.test(filePath);
+      this._postMessage({
+        command: 'showFilePreview',
+        fileName: filePath,
+        content: isMarkdown ? markdownToHtml(content) : content,
+        isMarkdown,
+      });
+    } catch (err) {
+      const errMsg = vscode.l10n.t('Failed to load file: {0}', String(err));
+      vscode.window.showErrorMessage(errMsg);
+      this._postMessage({ command: 'toast', message: errMsg, type: 'error' });
     }
   }
 
@@ -324,6 +369,7 @@ export class MarketplacePanel {
       await this._loadSkills(true);
     } catch (err) {
       vscode.window.showErrorMessage(String(err));
+      this._postMessage({ command: 'toast', message: String(err), type: 'error' });
     }
   }
 
@@ -341,6 +387,7 @@ export class MarketplacePanel {
       await this._loadSkills(true);
     } catch (err) {
       vscode.window.showErrorMessage(String(err));
+      this._postMessage({ command: 'toast', message: String(err), type: 'error' });
     }
   }
 
@@ -384,7 +431,7 @@ export class MarketplacePanel {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <title>${t.title}</title>
   <style nonce="${nonce}">
     :root {
@@ -407,6 +454,7 @@ export class MarketplacePanel {
       --success-fg: var(--vscode-testing-iconPassed, #73c991);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    .hidden-initial { display: none; }
     body {
       font-family: var(--vscode-font-family);
       font-size: var(--vscode-font-size);
@@ -557,8 +605,8 @@ export class MarketplacePanel {
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ---- Detail / Preview View ---- */
-    .detail-view { display: none; }
-    .detail-view.active { display: block; }
+    .detail-view { display: none; flex-direction: column; height: 100%; }
+    .detail-view.active { display: flex; }
     .list-view.hidden { display: none !important; }
     .detail-header {
       display: flex; align-items: center; gap: 12px;
@@ -582,8 +630,10 @@ export class MarketplacePanel {
     .detail-meta-item strong { color: var(--fg); }
     .detail-tags { display: flex; gap: 4px; flex-wrap: wrap; }
     .detail-body {
+      flex: 1; min-width: 0;
       padding: 20px 24px; line-height: 1.7;
       overflow-wrap: break-word; word-break: break-word;
+      overflow-y: auto;
     }
     .detail-body h1 { font-size: 1.5em; margin: 20px 0 10px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
     .detail-body h2 { font-size: 1.3em; margin: 18px 0 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
@@ -616,22 +666,6 @@ export class MarketplacePanel {
     }
     .detail-body th { background: var(--input-bg); font-weight: 600; }
 
-    /* Bundled files section in detail view */
-    .bundled-files {
-      margin-top: 20px; padding: 14px 16px;
-      background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px;
-    }
-    .bundled-files-title {
-      font-weight: 600; font-size: 0.9em; margin-bottom: 8px;
-      display: flex; align-items: center; gap: 6px;
-    }
-    .bundled-files-list { list-style: none; padding: 0; margin: 0; }
-    .bundled-files-list li {
-      padding: 3px 0; font-size: 0.85em; color: var(--desc-fg);
-      display: flex; align-items: center; gap: 6px;
-    }
-    .bundled-files-list li .file-icon { opacity: 0.7; font-size: 0.9em; }
-
     /* File count badge on skill cards */
     .files-badge {
       font-size: 0.72em; padding: 2px 7px;
@@ -639,6 +673,134 @@ export class MarketplacePanel {
       border: 1px solid var(--border); border-radius: 10px;
       display: inline-flex; align-items: center; gap: 3px;
     }
+
+    /* ---- Detail workspace: file explorer + content ---- */
+    .detail-workspace {
+      display: flex; flex: 1; min-height: 0; overflow: hidden;
+    }
+    .file-explorer {
+      width: 220px; min-width: 180px; max-width: 300px;
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      background: color-mix(in srgb, var(--bg) 92%, var(--fg) 8%);
+      overflow-y: auto; flex-shrink: 0;
+    }
+    .file-explorer.hidden { display: none; }
+    .explorer-title {
+      padding: 10px 14px; font-size: 0.75em;
+      text-transform: uppercase; letter-spacing: 0.8px;
+      color: var(--desc-fg); font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      user-select: none;
+    }
+    .file-tree { list-style: none; margin: 0; padding: 4px 0; }
+    .file-tree-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 14px; cursor: pointer;
+      font-size: 0.85em; color: var(--desc-fg);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      border-left: 2px solid transparent;
+      transition: background 0.1s, color 0.1s;
+    }
+    .file-tree-item:hover {
+      background: color-mix(in srgb, var(--bg) 80%, var(--fg) 20%);
+      color: var(--fg);
+    }
+    .file-tree-item.active {
+      background: color-mix(in srgb, var(--btn-bg) 18%, var(--bg) 82%);
+      color: var(--fg); font-weight: 500;
+      border-left-color: var(--btn-bg);
+    }
+    .file-tree-icon { opacity: 0.7; font-size: 0.95em; flex-shrink: 0; }
+    .file-tree-item.active .file-tree-icon { opacity: 1; }
+    .file-tree-name { overflow: hidden; text-overflow: ellipsis; }
+    .file-loading {
+      text-align: center; padding: 60px 24px; color: var(--desc-fg);
+    }
+
+    /* ---- Syntax highlighting tokens ---- */
+    .code-view { position: relative; }
+    .code-view pre {
+      background: var(--input-bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: 12px; overflow-x: auto;
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 0.9em; margin: 0; line-height: 1.6;
+    }
+    .code-lang-badge {
+      position: absolute; top: 6px; right: 10px;
+      font-size: 0.7em; padding: 2px 8px;
+      background: var(--border); color: var(--desc-fg);
+      border-radius: 3px; text-transform: uppercase;
+      pointer-events: none; user-select: none;
+    }
+    .hl-kw   { color: var(--vscode-symbolIcon-keywordForeground, #c586c0); }
+    .hl-str  { color: var(--vscode-symbolIcon-stringForeground, #ce9178); }
+    .hl-num  { color: var(--vscode-symbolIcon-numberForeground, #b5cea8); }
+    .hl-cm   { color: var(--vscode-symbolIcon-commentForeground, #6a9955); font-style: italic; }
+    .hl-fn   { color: var(--vscode-symbolIcon-functionForeground, #dcdcaa); }
+    .hl-tag  { color: var(--vscode-symbolIcon-keywordForeground, #569cd6); }
+    .hl-attr { color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe); }
+    .hl-val  { color: var(--vscode-symbolIcon-stringForeground, #ce9178); }
+    .hl-op   { color: var(--vscode-symbolIcon-operatorForeground, #d4d4d4); }
+    .hl-type { color: var(--vscode-symbolIcon-typeParameterForeground, #4ec9b0); }
+
+    /* ---- Toast notifications ---- */
+    .toast-container {
+      position: fixed; bottom: 16px; right: 16px;
+      z-index: 9999; display: flex; flex-direction: column-reverse;
+      gap: 8px; max-width: 420px; pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 10px 14px; border-radius: 6px;
+      font-size: 0.85em; line-height: 1.4;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      animation: toastIn 0.25s ease-out;
+      word-break: break-word;
+    }
+    .toast.fade-out { animation: toastOut 0.3s ease-in forwards; }
+    .toast-error {
+      background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+      border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+      color: var(--vscode-errorForeground, #f48771);
+    }
+    .toast-info {
+      background: var(--vscode-inputValidation-infoBackground, #063b49);
+      border: 1px solid var(--vscode-inputValidation-infoBorder, #007acc);
+      color: var(--fg);
+    }
+    .toast-icon { flex-shrink: 0; font-size: 1.1em; margin-top: 1px; }
+    .toast-msg { flex: 1; }
+    .toast-close {
+      flex-shrink: 0; background: none; border: none;
+      color: inherit; cursor: pointer; font-size: 1em;
+      padding: 0 2px; opacity: 0.6;
+    }
+    .toast-close:hover { opacity: 1; }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(8px); } }
+
+    /* ---- Error state ---- */
+    .error-state {
+      text-align: center; padding: 60px 24px;
+      color: var(--desc-fg); display: none;
+    }
+    .error-state h2 { color: var(--vscode-errorForeground, #f48771); margin-bottom: 8px; }
+    .error-state .error-detail {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 0.85em; background: var(--input-bg);
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 10px 14px; margin: 12px auto; max-width: 600px;
+      text-align: left; word-break: break-all;
+    }
+    .error-state .retry-btn {
+      margin-top: 12px; padding: 6px 16px;
+      background: var(--btn-bg); color: var(--btn-fg);
+      border: none; border-radius: 4px; cursor: pointer;
+      font-family: inherit; font-size: 0.9em;
+    }
+    .error-state .retry-btn:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
@@ -660,12 +822,18 @@ export class MarketplacePanel {
       <div class="spinner"></div>
       <h2>${t.loading}</h2>
     </div>
-    <ul class="skill-list" id="skillList" style="display:none"></ul>
-    <div class="empty-state" id="emptyState" style="display:none">
+    <ul class="skill-list hidden-initial" id="skillList"></ul>
+    <div class="empty-state hidden-initial" id="emptyState">
       <h2>${t.noSkillsFound}</h2>
       <p>${t.noSkillsHint}</p>
     </div>
+    <div class="error-state" id="errorState">
+      <h2>\u{26A0}\u{FE0F} ${t.loadError}</h2>
+      <div class="error-detail" id="errorDetail"></div>
+      <button class="retry-btn" id="retryBtn">\u{21BB} ${t.refreshBtn}</button>
+    </div>
   </div>
+  <div class="toast-container" id="toastContainer"></div>
 
   <!-- Detail / Preview View -->
   <div class="detail-view" id="detailView">
@@ -677,8 +845,14 @@ export class MarketplacePanel {
       </div>
     </div>
     <div class="detail-meta-bar" id="detailMeta"></div>
-    <div class="detail-body" id="detailBody">
-      <p>${t.previewLoadingBody}</p>
+    <div class="detail-workspace">
+      <div class="file-explorer hidden" id="fileExplorer">
+        <div class="explorer-title">\u{1F4C2} Files</div>
+        <ul class="file-tree" id="fileTree"></ul>
+      </div>
+      <div class="detail-body" id="detailBody">
+        <p>${t.previewLoadingBody}</p>
+      </div>
     </div>
   </div>
 
@@ -695,6 +869,7 @@ export class MarketplacePanel {
       backBtn: t.backBtn,
       selectAll: t.selectAll,
       deselectAll: t.deselectAll,
+      loadingFile: t.loadingFile,
     })};
 
     let allSkills = [];
@@ -720,8 +895,39 @@ export class MarketplacePanel {
     const detailBody     = document.getElementById('detailBody');
     const detailInstallBtn = document.getElementById('detailInstallBtn');
     const backBtn        = document.getElementById('backBtn');
+    const fileExplorer   = document.getElementById('fileExplorer');
+    const fileTree       = document.getElementById('fileTree');
+    const errorState     = document.getElementById('errorState');
+    const errorDetail    = document.getElementById('errorDetail');
+    const retryBtn       = document.getElementById('retryBtn');
+    const toastContainer = document.getElementById('toastContainer');
 
     var currentPreviewSkill = null;
+
+    // Toast helper
+    function showToast(message, type) {
+      var toast = document.createElement('div');
+      toast.className = 'toast toast-' + (type || 'error');
+      var icon = type === 'info' ? '\u2139\uFE0F' : '\u274C';
+      toast.innerHTML = '<span class="toast-icon">' + icon + '</span>' +
+        '<span class="toast-msg">' + escapeHtml(message) + '</span>' +
+        '<button class="toast-close">\u2715</button>';
+      toastContainer.appendChild(toast);
+      toast.querySelector('.toast-close').addEventListener('click', function() {
+        toast.classList.add('fade-out');
+        setTimeout(function() { toast.remove(); }, 300);
+      });
+      setTimeout(function() {
+        if (toast.parentNode) {
+          toast.classList.add('fade-out');
+          setTimeout(function() { toast.remove(); }, 300);
+        }
+      }, 8000);
+    }
+
+    retryBtn.addEventListener('click', function() {
+      vscode.postMessage({ command: 'refresh' });
+    });
 
     // Tell extension we're ready
     vscode.postMessage({ command: 'ready' });
@@ -765,6 +971,16 @@ export class MarketplacePanel {
           loadingState.style.display = 'block';
           skillList.style.display = 'none';
           emptyState.style.display = 'none';
+          errorState.style.display = 'none';
+          break;
+        case 'loadError':
+          loadingState.style.display = 'none';
+          emptyState.style.display = 'none';
+          errorState.style.display = 'block';
+          errorDetail.textContent = msg.error || 'Unknown error';
+          break;
+        case 'toast':
+          showToast(msg.message, msg.type || 'error');
           break;
         case 'updateSkills':
           var prevSourceIds = new Set(allSources.map(function(s) { return s.id; }));
@@ -803,6 +1019,9 @@ export class MarketplacePanel {
           break;
         case 'showPreview':
           showDetail(msg.skill);
+          break;
+        case 'showFilePreview':
+          showFileContent(msg.fileName, msg.content, msg.isMarkdown);
           break;
         case 'filterSource':
           applySourceFilter(msg.sourceId);
@@ -1035,30 +1254,112 @@ export class MarketplacePanel {
       }
       detailMeta.innerHTML = metaParts.join('');
 
-      // Render body markdown
-      var bodyContent = skill.bodyHtml || '';
+      // Store the skill body HTML for switching back to SKILL.md
+      var skillBodyHtml = skill.bodyHtml || '';
 
-      // Append bundled files section if any
-      if (skill.additionalFiles && skill.additionalFiles.length > 0) {
-        var fileItems = skill.additionalFiles.map(function(f) {
-          var icon = '\u{1F4C4}'; // page icon
-          if (f.match(/\\.(sh|bash|py|js|ts)$/)) icon = '\u{2699}';  // gear for scripts
+      // Build file explorer sidebar
+      var hasFiles = skill.additionalFiles && skill.additionalFiles.length > 0;
+      if (hasFiles) {
+        fileExplorer.classList.remove('hidden');
+        var treeHtml = '<li class="file-tree-item active" data-tab="skill-md">' +
+          '<span class="file-tree-icon">\u{1F4C4}</span><span class="file-tree-name">SKILL.md</span></li>';
+        treeHtml += skill.additionalFiles.map(function(f) {
+          var icon = '\u{1F4C4}';
+          if (f.match(/\\.(sh|bash|py|js|ts)$/)) icon = '\u{2699}';
           if (f.match(/^scripts\\//)) icon = '\u{2699}';
-          return '<li><span class="file-icon">' + icon + '</span>' + escapeHtml(f) + '</li>';
+          if (f.match(/\\.md$/i)) icon = '\u{1F4DD}';
+          return '<li class="file-tree-item" data-tab="file" data-file-path="' + escapeHtml(f) + '">' +
+            '<span class="file-tree-icon">' + icon + '</span><span class="file-tree-name">' + escapeHtml(f) + '</span></li>';
         }).join('');
-        bodyContent += '<div class="bundled-files">' +
-          '<div class="bundled-files-title">\u{1F4CE} Bundled Files (' + skill.additionalFiles.length + ')</div>' +
-          '<ul class="bundled-files-list">' + fileItems + '</ul>' +
-        '</div>';
+        fileTree.innerHTML = treeHtml;
+      } else {
+        fileExplorer.classList.add('hidden');
+        fileTree.innerHTML = '';
       }
 
-      detailBody.innerHTML = bodyContent;
+      // Show SKILL.md content by default
+      detailBody.innerHTML = skillBodyHtml;
+
+      // Cache for loaded file contents
+      var fileContentCache = {};
+
+      // Bind file tree click events
+      fileTree.querySelectorAll('.file-tree-item').forEach(function(item) {
+        item.addEventListener('click', function() {
+          // Update active highlight
+          fileTree.querySelectorAll('.file-tree-item').forEach(function(i) { i.classList.remove('active'); });
+          item.classList.add('active');
+
+          var tabType = item.getAttribute('data-tab');
+          if (tabType === 'skill-md') {
+            detailBody.innerHTML = skillBodyHtml;
+            return;
+          }
+
+          var filePath = item.getAttribute('data-file-path');
+          if (!filePath || !currentPreviewSkill) return;
+
+          // Check cache first
+          if (fileContentCache[filePath]) {
+            renderFileContent(filePath, fileContentCache[filePath]);
+            return;
+          }
+
+          // Show loading state
+          detailBody.innerHTML = '<div class="file-loading"><div class="spinner"></div><p>' + escapeHtml(loc.loadingFile) + '</p></div>';
+
+          // Request file content from extension
+          vscode.postMessage({
+            command: 'previewFile',
+            sourceId: currentPreviewSkill.sourceId,
+            repoPath: currentPreviewSkill.repoPath,
+            filePath: filePath,
+          });
+        });
+      });
+
+      // Helper to render file content into detail body
+      function renderFileContent(fileName, content) {
+        var isMarkdown = /\\.md$/i.test(fileName);
+        if (isMarkdown) {
+          detailBody.innerHTML = content;
+        } else {
+          detailBody.innerHTML = renderCodeView(content, fileName);
+        }
+      }
+
+      // Override showFileContent for this detail session
+      currentFileContentHandler = function(fileName, content, isMarkdown) {
+        // Cache the raw content
+        fileContentCache[fileName] = content;
+        // If the tree item for this file is still active, render it
+        var activeItem = fileTree.querySelector('.file-tree-item.active');
+        if (activeItem && activeItem.getAttribute('data-file-path') === fileName) {
+          if (isMarkdown) {
+            detailBody.innerHTML = content;
+          } else {
+            detailBody.innerHTML = renderCodeView(content, fileName);
+          }
+        }
+      };
+    }
+
+    // Current handler for file content responses (set by showDetail)
+    var currentFileContentHandler = null;
+
+    function showFileContent(fileName, content, isMarkdown) {
+      if (currentFileContentHandler) {
+        currentFileContentHandler(fileName, content, isMarkdown);
+      }
     }
 
     function hideDetail() {
       currentPreviewSkill = null;
+      currentFileContentHandler = null;
       detailView.classList.remove('active');
       listView.classList.remove('hidden');
+      fileExplorer.classList.add('hidden');
+      fileTree.innerHTML = '';
       document.querySelector('.header').style.display = '';
       document.querySelector('.source-filters').style.display = '';
       // sourceBar visibility handled by renderSourceBar
@@ -1081,6 +1382,140 @@ export class MarketplacePanel {
       var div = document.createElement('div');
       div.textContent = str;
       return div.innerHTML;
+    }
+
+    function getLang(fileName) {
+      var ext = (fileName.match(/\\.([^.]+)$/) || [])[1];
+      if (!ext) return '';
+      ext = ext.toLowerCase();
+      var map = {
+        js:'js', mjs:'js', cjs:'js', jsx:'js',
+        ts:'ts', tsx:'ts', mts:'ts',
+        py:'py', pyw:'py',
+        html:'html', htm:'html', xml:'html', svg:'html',
+        css:'css', scss:'css', less:'css',
+        json:'json',
+        yaml:'yaml', yml:'yaml',
+        sh:'sh', bash:'sh', zsh:'sh', fish:'sh',
+        sql:'sql',
+        rs:'rs', go:'go', java:'java', kt:'java', c:'c', cpp:'c', h:'c', hpp:'c', cs:'c',
+        rb:'rb', php:'php', lua:'lua', r:'r',
+        toml:'toml', ini:'toml', cfg:'toml',
+        dockerfile:'sh',
+      };
+      return map[ext] || '';
+    }
+
+    function highlightCode(code, lang) {
+      var h = escapeHtml(code);
+      if (!lang) return h;
+
+      // Comment patterns
+      var lineComment = '//';
+      var blockStart = null, blockEnd = null;
+      if (lang === 'py' || lang === 'rb' || lang === 'r') lineComment = '#';
+      if (lang === 'sh') lineComment = '#';
+      if (lang === 'sql') lineComment = '--';
+      if (lang === 'lua') lineComment = '--';
+      if (lang === 'toml') lineComment = '#';
+      if (lang === 'html') { lineComment = null; blockStart = '&lt;!--'; blockEnd = '--&gt;'; }
+      if (lang === 'css') { lineComment = null; blockStart = '/*'; blockEnd = '*/'; }
+
+      // Process line by line for comments
+      var lines = h.split('\\n');
+      var inBlock = false;
+      lines = lines.map(function(line) {
+        if (inBlock) {
+          var endIdx = blockEnd ? line.indexOf(blockEnd) : -1;
+          if (endIdx >= 0) {
+            inBlock = false;
+            return '<span class="hl-cm">' + line.substring(0, endIdx + blockEnd.length) + '</span>' + line.substring(endIdx + blockEnd.length);
+          }
+          return '<span class="hl-cm">' + line + '</span>';
+        }
+        if (blockStart) {
+          var bsIdx = line.indexOf(blockStart);
+          if (bsIdx >= 0) {
+            var beIdx = blockEnd ? line.indexOf(blockEnd, bsIdx + blockStart.length) : -1;
+            if (beIdx >= 0) {
+              return line.substring(0, bsIdx) + '<span class="hl-cm">' + line.substring(bsIdx, beIdx + blockEnd.length) + '</span>' + line.substring(beIdx + blockEnd.length);
+            } else {
+              inBlock = true;
+              return line.substring(0, bsIdx) + '<span class="hl-cm">' + line.substring(bsIdx) + '</span>';
+            }
+          }
+        }
+        if (lineComment) {
+          // Check for line comment (not inside a string — simple heuristic)
+          var cmIdx = line.indexOf(lineComment === '#' ? '#' : (lineComment === '--' ? '--' : '//'));
+          if (cmIdx >= 0) {
+            var before = line.substring(0, cmIdx);
+            return before + '<span class="hl-cm">' + line.substring(cmIdx) + '</span>';
+          }
+        }
+        return line;
+      });
+      h = lines.join('\\n');
+
+      // Strings (double & single quotes, backticks for JS/TS)
+      var bt = String.fromCharCode(96);
+      h = h.replace(new RegExp('("[^"]*"|' + "'" + "[^']*'" + '|' + bt + '[^' + bt + ']*' + bt + ')', 'g'), '<span class="hl-str">$1</span>');
+
+      // Numbers
+      h = h.replace(/\\b(\\d+\\.?\\d*(?:e[+-]?\\d+)?)\\b/gi, '<span class="hl-num">$1</span>');
+
+      // Language-specific keywords
+      var kw = [];
+      if (lang === 'js' || lang === 'ts') {
+        kw = ['const','let','var','function','return','if','else','for','while','do','switch','case','break','continue','new','this','class','extends','import','export','from','default','async','await','try','catch','finally','throw','typeof','instanceof','in','of','yield','delete','void','null','undefined','true','false'];
+        if (lang === 'ts') kw = kw.concat(['interface','type','enum','namespace','declare','abstract','implements','readonly','as','is','keyof','infer','never','unknown','any']);
+      } else if (lang === 'py') {
+        kw = ['def','class','if','elif','else','for','while','return','import','from','as','try','except','finally','raise','with','yield','lambda','pass','break','continue','and','or','not','is','in','None','True','False','self','async','await','global','nonlocal'];
+      } else if (lang === 'html') {
+        // HTML tags
+        h = h.replace(/(&lt;\\/?)([a-zA-Z][a-zA-Z0-9-]*)/g, '$1<span class="hl-tag">$2</span>');
+        h = h.replace(/\\s([a-zA-Z-]+)(=)/g, ' <span class="hl-attr">$1</span>$2');
+      } else if (lang === 'css') {
+        kw = ['important','inherit','initial','unset','none'];
+        h = h.replace(/([.#][a-zA-Z_][a-zA-Z0-9_-]*)/g, '<span class="hl-fn">$1</span>');
+        h = h.replace(/(@[a-zA-Z-]+)/g, '<span class="hl-kw">$1</span>');
+      } else if (lang === 'json') {
+        h = h.replace(/(&quot;[^&]*?&quot;)\\s*:/g, '<span class="hl-attr">$1</span>:');
+      } else if (lang === 'yaml') {
+        h = h.replace(/^(\\s*)([a-zA-Z_][a-zA-Z0-9_-]*)\\s*:/gm, '$1<span class="hl-attr">$2</span>:');
+      } else if (lang === 'sh') {
+        kw = ['if','then','else','elif','fi','for','while','do','done','case','esac','in','function','return','local','export','source','echo','exit','set','unset','readonly','shift','eval','exec','trap','wait','cd','pwd','test'];
+      } else if (lang === 'sql') {
+        kw = ['SELECT','FROM','WHERE','INSERT','INTO','UPDATE','SET','DELETE','CREATE','DROP','ALTER','TABLE','INDEX','VIEW','JOIN','INNER','LEFT','RIGHT','OUTER','ON','AND','OR','NOT','NULL','IS','IN','BETWEEN','LIKE','ORDER','BY','GROUP','HAVING','LIMIT','OFFSET','AS','DISTINCT','UNION','ALL','EXISTS','CASE','WHEN','THEN','ELSE','END'];
+      } else if (lang === 'go') {
+        kw = ['package','import','func','return','var','const','type','struct','interface','map','chan','range','if','else','for','switch','case','default','break','continue','go','defer','select','fallthrough','nil','true','false'];
+      } else if (lang === 'rs') {
+        kw = ['fn','let','mut','const','if','else','for','while','loop','match','return','use','mod','pub','struct','enum','impl','trait','where','self','Self','super','crate','as','in','ref','move','async','await','dyn','true','false','None','Some'];
+      } else if (lang === 'java' || lang === 'c' || lang === 'php') {
+        kw = ['if','else','for','while','do','switch','case','break','continue','return','class','interface','extends','implements','new','this','super','public','private','protected','static','final','abstract','void','int','long','double','float','char','boolean','string','null','true','false','import','package','try','catch','finally','throw','throws'];
+      } else if (lang === 'rb') {
+        kw = ['def','class','module','if','elsif','else','unless','while','until','for','do','end','return','require','include','attr_accessor','attr_reader','attr_writer','self','nil','true','false','yield','block_given','begin','rescue','ensure','raise'];
+      } else if (lang === 'lua') {
+        kw = ['local','function','if','then','else','elseif','end','for','while','do','repeat','until','return','nil','true','false','and','or','not','in','require'];
+      } else if (lang === 'toml') {
+        kw = ['true','false'];
+      }
+
+      if (kw.length > 0) {
+        var kwPattern = new RegExp('\\\\b(' + kw.join('|') + ')\\\\b', 'g');
+        h = h.replace(kwPattern, '<span class="hl-kw">$1</span>');
+      }
+
+      // Function calls: word followed by (
+      h = h.replace(/\\b([a-zA-Z_$][a-zA-Z0-9_$]*)\\s*\\(/g, '<span class="hl-fn">$1</span>(');
+
+      return h;
+    }
+
+    function renderCodeView(code, fileName) {
+      var lang = getLang(fileName);
+      var langLabel = lang ? '<span class="code-lang-badge">' + escapeHtml(lang) + '</span>' : '';
+      return '<div class="code-view">' + langLabel + '<pre>' + highlightCode(code, lang) + '</pre></div>';
     }
   </script>
 </body>

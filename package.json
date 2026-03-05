@@ -2,7 +2,7 @@
   "name": "skill-dock",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "publisher": "skill-dock",
   "license": "MIT",
   "repository": {
@@ -27,6 +27,22 @@
     "claude",
     "cursor",
     "codex",
+    "github-copilot",
+    "windsurf",
+    "cline",
+    "roo",
+    "continue",
+    "augment",
+    "opencode",
+    "goose",
+    "gemini-cli",
+    "amp",
+    "kilo",
+    "junie",
+    "trae",
+    "droid",
+    "kode",
+    "openhands",
     "ai"
   ],
   "activationEvents": [],
@@ -309,7 +325,24 @@
             "claude",
             "cursor",
             "codex",
-            "github"
+            "github",
+            "github-copilot",
+            "windsurf",
+            "cline",
+            "roo",
+            "continue",
+            "augment",
+            "opencode",
+            "goose",
+            "gemini-cli",
+            "amp",
+            "kilo",
+            "junie",
+            "trae",
+            "droid",
+            "kode",
+            "openhands",
+            "universal"
           ],
           "default": "claude",
           "description": "%config.defaultTarget.description%"
@@ -332,6 +365,12 @@
           "enum": ["name", "lastModified", "author", "mostUsed"],
           "default": "name",
           "description": "%config.librarySortBy.description%"
+        },
+        "skilldock.installMode": {
+          "type": "string",
+          "enum": ["copy", "symlink"],
+          "default": "copy",
+          "description": "%config.installMode.description%"
         }
       }
     }

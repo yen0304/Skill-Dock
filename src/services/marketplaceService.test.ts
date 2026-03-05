@@ -2,7 +2,50 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as zlib from 'zlib';
 import { EventEmitter } from 'events';
+
+/**
+ * Build a minimal tar.gz buffer from a map of {path: content}.
+ * Mimics the GitHub codeload archive format where all entries are
+ * nested under a root directory (e.g. "repo-main/").
+ */
+function buildTarGz(files: Record<string, string>, rootPrefix = 'repo-main'): Buffer {
+  const blocks: Buffer[] = [];
+
+  for (const [filePath, content] of Object.entries(files)) {
+    const fullPath = `${rootPrefix}/${filePath}`;
+    const contentBuf = Buffer.from(content, 'utf-8');
+
+    // 512-byte tar header
+    const header = Buffer.alloc(512);
+    header.write(fullPath.substring(0, 100), 0, 'utf-8');       // name
+    header.write('0000644\0', 100, 'utf-8');                     // mode
+    header.write('0000000\0', 108, 'utf-8');                     // uid
+    header.write('0000000\0', 116, 'utf-8');                     // gid
+    header.write(contentBuf.length.toString(8).padStart(11, '0') + '\0', 124, 'utf-8'); // size
+    header.write('00000000000\0', 136, 'utf-8');                 // mtime
+    header.fill(0x20, 148, 156);                                 // checksum placeholder
+    header[156] = 0x30;                                          // type '0' = regular file
+
+    // Calculate and write checksum
+    let checksum = 0;
+    for (let i = 0; i < 512; i++) { checksum += header[i]; }
+    header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148, 'utf-8');
+
+    blocks.push(header);
+
+    // Content padded to 512-byte boundary
+    const padded = Buffer.alloc(Math.ceil(contentBuf.length / 512) * 512);
+    contentBuf.copy(padded);
+    blocks.push(padded);
+  }
+
+  // End-of-archive marker: two 512-byte zero blocks
+  blocks.push(Buffer.alloc(1024));
+
+  return zlib.gzipSync(Buffer.concat(blocks));
+}
 
 let mockLibraryPath = '';
 let mockMarketplaceSources: string[] = [];
@@ -144,6 +187,51 @@ describe('MarketplaceService', () => {
   });
 
   // ----------------------------------------------------------
+  // makeSkillId
+  // ----------------------------------------------------------
+  describe('makeSkillId', () => {
+    it('should create a namespaced ID from source and dirName', () => {
+      const source: MarketplaceSource = {
+        id: 'anthropics/skills', owner: 'anthropics', repo: 'skills',
+        branch: 'main', path: '', label: 'Anthropic', isBuiltin: true,
+      };
+      expect(MarketplaceService.makeSkillId(source, 'code-review')).toBe('anthropics--skills--code-review');
+    });
+
+    it('should include source path in ID when present', () => {
+      const source: MarketplaceSource = {
+        id: 'github/awesome-copilot/skills', owner: 'github', repo: 'awesome-copilot',
+        branch: 'main', path: 'skills', label: 'GitHub', isBuiltin: true,
+      };
+      expect(MarketplaceService.makeSkillId(source, 'my-skill')).toBe('github--awesome-copilot--skills--my-skill');
+    });
+
+    it('should handle nested sub-path with slashes', () => {
+      const source: MarketplaceSource = {
+        id: 'org/repo/a/b', owner: 'org', repo: 'repo',
+        branch: 'main', path: 'a/b', label: 'Org', isBuiltin: false,
+      };
+      expect(MarketplaceService.makeSkillId(source, 'tool')).toBe('org--repo--a--b--tool');
+    });
+
+    it('should produce different IDs for same dirName from different sources', () => {
+      const srcA: MarketplaceSource = {
+        id: 'anthropics/skills', owner: 'anthropics', repo: 'skills',
+        branch: 'main', path: '', label: 'A', isBuiltin: true,
+      };
+      const srcB: MarketplaceSource = {
+        id: 'openai/skills', owner: 'openai', repo: 'skills',
+        branch: 'main', path: '', label: 'B', isBuiltin: true,
+      };
+      const idA = MarketplaceService.makeSkillId(srcA, 'code-review');
+      const idB = MarketplaceService.makeSkillId(srcB, 'code-review');
+      expect(idA).not.toBe(idB);
+      expect(idA).toBe('anthropics--skills--code-review');
+      expect(idB).toBe('openai--skills--code-review');
+    });
+  });
+
+  // ----------------------------------------------------------
   // Source management
   // ----------------------------------------------------------
   describe('getSources', () => {
@@ -211,6 +299,54 @@ describe('MarketplaceService', () => {
   describe('clearCache', () => {
     it('should clear the cache without error', () => {
       expect(() => service.clearCache()).not.toThrow();
+    });
+  });
+
+  // ----------------------------------------------------------
+  // fetchFileContent
+  // ----------------------------------------------------------
+  describe('fetchFileContent', () => {
+    afterEach(() => {
+      vi.mocked(https.get as any).mockReset();
+    });
+
+    it('should fetch the raw content of a remote file', async () => {
+      const fileUrl = 'https://raw.githubusercontent.com/org/repo/main/skill/reference.md';
+      vi.mocked(https.get as any).mockImplementation(
+        (_url: string, _opts: unknown, cb: (res: any) => void) => {
+          const res = Object.assign(new EventEmitter(), {
+            statusCode: 200, headers: {}, resume: vi.fn(),
+          });
+          const req = Object.assign(new EventEmitter(), { end: vi.fn() });
+          process.nextTick(() => {
+            cb(res);
+            res.emit('data', Buffer.from('# Reference\n\nDoc content'));
+            res.emit('end');
+          });
+          return req;
+        }
+      );
+
+      const content = await service.fetchFileContent(fileUrl);
+      expect(content).toBe('# Reference\n\nDoc content');
+    });
+
+    it('should reject on HTTP error', async () => {
+      const fileUrl = 'https://raw.githubusercontent.com/org/repo/main/skill/missing.md';
+      vi.mocked(https.get as any).mockImplementation(
+        (_url: string, _opts: unknown, cb: (res: any) => void) => {
+          const res = Object.assign(new EventEmitter(), {
+            statusCode: 404, headers: {}, resume: vi.fn(),
+          });
+          const req = Object.assign(new EventEmitter(), { end: vi.fn() });
+          process.nextTick(() => {
+            cb(res);
+          });
+          return req;
+        }
+      );
+
+      await expect(service.fetchFileContent(fileUrl)).rejects.toThrow('HTTP 404');
     });
   });
 
@@ -582,7 +718,7 @@ describe('MarketplaceService', () => {
           const req = Object.assign(new EventEmitter(), { end: vi.fn() });
           process.nextTick(() => {
             cb(res);
-            res.emit('data', Buffer.from(JSON.stringify({ tree: [] })));
+            res.emit('data', buildTarGz({}));
             res.emit('end');
           });
           return req;
@@ -613,7 +749,7 @@ describe('MarketplaceService', () => {
           const req = Object.assign(new EventEmitter(), { end: vi.fn() });
           process.nextTick(() => {
             cb(res);
-            res.emit('data', Buffer.from(JSON.stringify({ tree: [] })));
+            res.emit('data', buildTarGz({}));
             res.emit('end');
           });
           return req;
@@ -692,7 +828,7 @@ describe('MarketplaceService', () => {
    * Helper to mock https.get responses by URL.
    */
   function mockHttpResponses(
-    map: Record<string, { status: number; body: string; headers?: Record<string, string> }>
+    map: Record<string, { status: number; body: string | Buffer; headers?: Record<string, string> }>
   ) {
     vi.mocked(https.get as any).mockImplementation(
       (_url: string, _opts: unknown, cb: (res: any) => void) => {
@@ -707,7 +843,8 @@ describe('MarketplaceService', () => {
         process.nextTick(() => {
           cb(res);
           if (entry && entry.status >= 200 && entry.status < 300) {
-            res.emit('data', Buffer.from(entry.body));
+            const bodyBuf = Buffer.isBuffer(entry.body) ? entry.body : Buffer.from(entry.body);
+            res.emit('data', bodyBuf);
             res.emit('end');
           }
         });
@@ -734,25 +871,18 @@ describe('MarketplaceService', () => {
 
     it('should fetch and parse remote skills', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({
-            tree: [
-              { type: 'tree', path: 'my-skill' },
-              { type: 'blob', path: 'my-skill/SKILL.md' },
-              { type: 'blob', path: 'README.md' },
-            ],
+          body: buildTarGz({
+            'my-skill/SKILL.md': '---\nname: My Skill\ndescription: A test skill\nauthor: tester\n---\n\n# My Skill\n\nContent here.',
+            'README.md': '# Readme',
           }),
-        },
-        'https://raw.githubusercontent.com/testorg/skills/main/my-skill/SKILL.md': {
-          status: 200,
-          body: '---\nname: My Skill\ndescription: A test skill\nauthor: tester\n---\n\n# My Skill\n\nContent here.',
         },
       });
 
       const skills = await service.fetchSource(testSource);
       expect(skills).toHaveLength(1);
-      expect(skills[0].id).toBe('my-skill');
+      expect(skills[0].id).toBe('testorg--skills--my-skill');
       expect(skills[0].metadata.name).toBe('My Skill');
       expect(skills[0].metadata.description).toBe('A test skill');
       expect(skills[0].metadata.author).toBe('tester');
@@ -762,13 +892,11 @@ describe('MarketplaceService', () => {
 
     it('should use cache on second call', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({ tree: [{ type: 'blob', path: 'a/SKILL.md' }] }),
-        },
-        'https://raw.githubusercontent.com/testorg/skills/main/a/SKILL.md': {
-          status: 200,
-          body: '---\nname: A\ndescription: a\n---\nBody',
+          body: buildTarGz({
+            'a/SKILL.md': '---\nname: A\ndescription: a\n---\nBody',
+          }),
         },
       });
 
@@ -784,20 +912,19 @@ describe('MarketplaceService', () => {
 
     it('should bypass cache when force=true', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({ tree: [{ type: 'blob', path: 'b/SKILL.md' }] }),
-        },
-        'https://raw.githubusercontent.com/testorg/skills/main/b/SKILL.md': {
-          status: 200,
-          body: '---\nname: B\ndescription: b\n---\nBody',
+          body: buildTarGz({
+            'b/SKILL.md': '---\nname: B\ndescription: b\n---\nBody',
+          }),
         },
       });
 
       await service.fetchSource(testSource);
       const results = await service.fetchSource(testSource, true);
       expect(results).toHaveLength(1);
-      expect(https.get).toHaveBeenCalledTimes(4);
+      // 1 HTTP call per fetch (archive download), 2 fetches total
+      expect(https.get).toHaveBeenCalledTimes(2);
     });
 
     it('should filter by source path prefix', async () => {
@@ -808,18 +935,12 @@ describe('MarketplaceService', () => {
       };
 
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({
-            tree: [
-              { type: 'blob', path: 'sub/inside/SKILL.md' },
-              { type: 'blob', path: 'outside/SKILL.md' },
-            ],
+          body: buildTarGz({
+            'sub/inside/SKILL.md': '---\nname: Inside\ndescription: in\n---\nBody',
+            'outside/SKILL.md': '---\nname: Outside\ndescription: out\n---\nBody',
           }),
-        },
-        'https://raw.githubusercontent.com/testorg/skills/main/sub/inside/SKILL.md': {
-          status: 200,
-          body: '---\nname: Inside\ndescription: in\n---\nBody',
         },
       });
 
@@ -828,11 +949,13 @@ describe('MarketplaceService', () => {
       expect(skills[0].metadata.name).toBe('Inside');
     });
 
-    it('should handle empty tree response', async () => {
+    it('should handle archive with no SKILL.md files', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({ tree: [] }),
+          body: buildTarGz({
+            'README.md': '# No skills here',
+          }),
         },
       });
 
@@ -840,11 +963,11 @@ describe('MarketplaceService', () => {
       expect(skills).toHaveLength(0);
     });
 
-    it('should handle missing tree property', async () => {
+    it('should handle empty archive', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({}),
+          body: buildTarGz({}),
         },
       });
 
@@ -854,7 +977,7 @@ describe('MarketplaceService', () => {
 
     it('should reject on HTTP error', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 404,
           body: 'Not Found',
         },
@@ -863,11 +986,11 @@ describe('MarketplaceService', () => {
       await expect(service.fetchSource(testSource)).rejects.toThrow('HTTP 404');
     });
 
-    it('should reject on invalid JSON', async () => {
+    it('should reject on invalid archive', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: 'not json!!!',
+          body: Buffer.from('not a valid gzip stream'),
         },
       });
 
@@ -876,20 +999,18 @@ describe('MarketplaceService', () => {
 
     it('should follow HTTP redirect', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 301,
           body: '',
           headers: {
-            location: 'https://api.github.com/repos/testorg/skills/git/trees/v2?recursive=1',
+            location: 'https://codeload.github.com/testorg/skills/tar.gz/some-redirect',
           },
         },
-        'https://api.github.com/repos/testorg/skills/git/trees/v2?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/some-redirect': {
           status: 200,
-          body: JSON.stringify({ tree: [{ type: 'blob', path: 'r/SKILL.md' }] }),
-        },
-        'https://raw.githubusercontent.com/testorg/skills/main/r/SKILL.md': {
-          status: 200,
-          body: '---\nname: Redirect\ndescription: redir\n---\nBody',
+          body: buildTarGz({
+            'r/SKILL.md': '---\nname: Redirect\ndescription: redir\n---\nBody',
+          }),
         },
       });
 
@@ -900,39 +1021,30 @@ describe('MarketplaceService', () => {
 
     it('should return untitled when metadata has no name field', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({ tree: [{ type: 'blob', path: 'my-cool-tool/SKILL.md' }] }),
-        },
-        'https://raw.githubusercontent.com/testorg/skills/main/my-cool-tool/SKILL.md': {
-          status: 200,
-          body: '---\ndescription: no name\n---\nBody',
+          body: buildTarGz({
+            'my-cool-tool/SKILL.md': '---\ndescription: no name\n---\nBody',
+          }),
         },
       });
 
       const skills = await service.fetchSource(testSource);
       expect(skills).toHaveLength(1);
-      // parseFrontmatter defaults to 'untitled' — _fetchSkillMd derive logic is unreachable
       expect(skills[0].metadata.name).toBe('untitled');
-      expect(skills[0].id).toBe('my-cool-tool');
+      expect(skills[0].id).toBe('testorg--skills--my-cool-tool');
     });
 
     it('should populate additionalFiles for sibling files in the skill directory', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({
-            tree: [
-              { type: 'blob', path: 'my-skill/SKILL.md' },
-              { type: 'blob', path: 'my-skill/reference.md' },
-              { type: 'blob', path: 'my-skill/scripts/helper.sh' },
-              { type: 'blob', path: 'README.md' }, // root-level file — must NOT be included
-            ],
+          body: buildTarGz({
+            'my-skill/SKILL.md': '---\nname: My Skill\ndescription: desc\n---\nContent',
+            'my-skill/reference.md': '# Reference\n\nDocs here',
+            'my-skill/scripts/helper.sh': '#!/bin/bash\necho hello',
+            'README.md': '# Root readme',
           }),
-        },
-        'https://raw.githubusercontent.com/testorg/skills/main/my-skill/SKILL.md': {
-          status: 200,
-          body: '---\nname: My Skill\ndescription: desc\n---\nContent',
         },
       });
 
@@ -952,24 +1064,110 @@ describe('MarketplaceService', () => {
 
     it('should set additionalFiles to undefined when there are no siblings', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/testorg/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({
-            tree: [
-              { type: 'blob', path: 'solo-skill/SKILL.md' },
-              { type: 'blob', path: 'README.md' },
-            ],
+          body: buildTarGz({
+            'solo-skill/SKILL.md': '---\nname: Solo\ndescription: alone\n---\nBody',
+            'README.md': '# Root',
           }),
-        },
-        'https://raw.githubusercontent.com/testorg/skills/main/solo-skill/SKILL.md': {
-          status: 200,
-          body: '---\nname: Solo\ndescription: alone\n---\nBody',
         },
       });
 
       const skills = await service.fetchSource(testSource);
       expect(skills).toHaveLength(1);
       expect(skills[0].additionalFiles).toBeUndefined();
+    });
+
+    it('should namespace skill IDs by source to avoid collisions across repos', async () => {
+      const sourceA: MarketplaceSource = {
+        id: 'orgA/skills', owner: 'orgA', repo: 'skills',
+        branch: 'main', path: '', label: 'Org A', isBuiltin: false,
+      };
+      const sourceB: MarketplaceSource = {
+        id: 'orgB/skills', owner: 'orgB', repo: 'skills',
+        branch: 'main', path: '', label: 'Org B', isBuiltin: false,
+      };
+
+      mockHttpResponses({
+        'https://codeload.github.com/orgA/skills/tar.gz/refs/heads/main': {
+          status: 200,
+          body: buildTarGz({
+            'code-review/SKILL.md': '---\nname: Code Review\ndescription: from A\n---\nBody A',
+          }),
+        },
+      });
+      const skillsA = await service.fetchSource(sourceA);
+
+      vi.mocked(https.get as any).mockReset();
+
+      mockHttpResponses({
+        'https://codeload.github.com/orgB/skills/tar.gz/refs/heads/main': {
+          status: 200,
+          body: buildTarGz({
+            'code-review/SKILL.md': '---\nname: Code Review\ndescription: from B\n---\nBody B',
+          }),
+        },
+      });
+      const skillsB = await service.fetchSource(sourceB);
+
+      expect(skillsA).toHaveLength(1);
+      expect(skillsB).toHaveLength(1);
+      expect(skillsA[0].id).toBe('orgA--skills--code-review');
+      expect(skillsB[0].id).toBe('orgB--skills--code-review');
+      expect(skillsA[0].id).not.toBe(skillsB[0].id);
+    });
+
+    it('should namespace skill IDs including sub-path for sources with path', async () => {
+      const pathSource: MarketplaceSource = {
+        ...testSource,
+        id: 'testorg/skills/sub',
+        path: 'sub',
+      };
+
+      mockHttpResponses({
+        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
+          status: 200,
+          body: buildTarGz({
+            'sub/inside/SKILL.md': '---\nname: Inside\ndescription: in\n---\nBody',
+          }),
+        },
+      });
+
+      const skills = await service.fetchSource(pathSource);
+      expect(skills).toHaveLength(1);
+      expect(skills[0].id).toBe('testorg--skills--sub--inside');
+    });
+
+    it('should install skills from different sources without collision', async () => {
+      // Install a skill from sourceA
+      const remoteA = {
+        source: { id: 'orgA/skills', owner: 'orgA', repo: 'skills', branch: 'main', path: '', label: 'A', isBuiltin: false } as MarketplaceSource,
+        id: 'orgA--skills--my-skill',
+        metadata: { name: 'My Skill', description: 'from A', version: '1.0' },
+        body: '# A version',
+        repoPath: 'my-skill/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      const remoteB = {
+        source: { id: 'orgB/skills', owner: 'orgB', repo: 'skills', branch: 'main', path: '', label: 'B', isBuiltin: false } as MarketplaceSource,
+        id: 'orgB--skills--my-skill',
+        metadata: { name: 'My Skill', description: 'from B', version: '2.0' },
+        body: '# B version',
+        repoPath: 'my-skill/SKILL.md',
+        downloadUrl: 'https://...',
+      };
+
+      await service.installSkill(remoteA);
+      await service.installSkill(remoteB);
+
+      // Both should exist independently
+      const skillA = await storageService.readSkill('orgA--skills--my-skill');
+      const skillB = await storageService.readSkill('orgB--skills--my-skill');
+      expect(skillA).not.toBeNull();
+      expect(skillB).not.toBeNull();
+      expect(skillA!.metadata.description).toBe('from A');
+      expect(skillB!.metadata.description).toBe('from B');
     });
 
     it('should handle network error', async () => {
@@ -992,13 +1190,11 @@ describe('MarketplaceService', () => {
 
     it('should aggregate skills from all sources', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/anthropics/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/anthropics/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({ tree: [{ type: 'blob', path: 'alpha/SKILL.md' }] }),
-        },
-        'https://raw.githubusercontent.com/anthropics/skills/main/alpha/SKILL.md': {
-          status: 200,
-          body: '---\nname: Alpha\ndescription: a\n---\nBody',
+          body: buildTarGz({
+            'alpha/SKILL.md': '---\nname: Alpha\ndescription: a\n---\nBody',
+          }),
         },
       });
 
@@ -1007,22 +1203,19 @@ describe('MarketplaceService', () => {
       expect(skills.find(s => s.metadata.name === 'Alpha')).toBeDefined();
     });
 
-    it('should return empty array when all sources fail', async () => {
+    it('should throw when all sources fail', async () => {
       mockHttpResponses({});
 
-      const skills = await service.fetchAll();
-      expect(skills).toEqual([]);
+      await expect(service.fetchAll()).rejects.toThrow(/failed to load/i);
     });
 
     it('should force refresh all sources', async () => {
       mockHttpResponses({
-        'https://api.github.com/repos/anthropics/skills/git/trees/main?recursive=1': {
+        'https://codeload.github.com/anthropics/skills/tar.gz/refs/heads/main': {
           status: 200,
-          body: JSON.stringify({ tree: [{ type: 'blob', path: 'a/SKILL.md' }] }),
-        },
-        'https://raw.githubusercontent.com/anthropics/skills/main/a/SKILL.md': {
-          status: 200,
-          body: '---\nname: A\ndescription: a\n---\nBody',
+          body: buildTarGz({
+            'a/SKILL.md': '---\nname: A\ndescription: a\n---\nBody',
+          }),
         },
       });
 

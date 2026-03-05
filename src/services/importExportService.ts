@@ -3,6 +3,10 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Skill, TargetFormat, TARGET_FORMATS } from '../models/skill';
 import { StorageService } from './storageService';
+import { sanitizeName, isPathSafe } from '../utils/pathSafety';
+
+/** Installation mode: symlink (recommended) or copy */
+export type InstallMode = 'symlink' | 'copy';
 
 /**
  * Check if a path exists (async replacement for fs.existsSync)
@@ -23,9 +27,14 @@ export class ImportExportService {
   constructor(private storageService: StorageService) {}
 
   /**
-   * Import a skill from the library into the current workspace
+   * Import a skill from the library into the current workspace.
+   * Supports both copy and symlink modes.
    */
-  async importToRepo(skill: Skill, format: TargetFormat): Promise<string> {
+  async importToRepo(
+    skill: Skill,
+    format: TargetFormat,
+    mode?: InstallMode,
+  ): Promise<string> {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders || workspaceFolders.length === 0) {
       throw new Error(vscode.l10n.t('No workspace folder open'));
@@ -33,7 +42,14 @@ export class ImportExportService {
 
     const workspaceRoot = workspaceFolders[0].uri.fsPath;
     const config = TARGET_FORMATS[format];
-    const targetDir = path.join(workspaceRoot, config.skillsDir, skill.id);
+    const safeId = sanitizeName(skill.id);
+    const targetDir = path.join(workspaceRoot, config.skillsDir, safeId);
+
+    // Validate path safety
+    const skillsBase = path.join(workspaceRoot, config.skillsDir);
+    if (!isPathSafe(skillsBase, targetDir)) {
+      throw new Error(vscode.l10n.t('Invalid skill ID: path traversal detected'));
+    }
 
     // Check if skill already exists
     if (await pathExists(targetDir)) {
@@ -48,10 +64,16 @@ export class ImportExportService {
       await fs.rm(targetDir, { recursive: true, force: true });
     }
 
-    // Copy skill directory
-    await this.copyDirectory(skill.dirPath, targetDir);
+    // Resolve install mode from parameter, settings, or default
+    const resolvedMode = mode ?? this.getConfiguredInstallMode();
 
-    // Create scaffold directories for codex format
+    if (resolvedMode === 'symlink') {
+      await this.createSymlink(skill.dirPath, targetDir);
+    } else {
+      await this.copyDirectory(skill.dirPath, targetDir);
+    }
+
+    // Create scaffold directories if specified by the format
     if (config.scaffoldDirs) {
       for (const dir of config.scaffoldDirs) {
         const scaffoldPath = path.join(targetDir, dir);
@@ -65,12 +87,70 @@ export class ImportExportService {
   }
 
   /**
+   * Import a skill to multiple agent formats at once (canonical copy + symlinks).
+   * Creates a single canonical copy then symlinks from each agent directory.
+   */
+  async importToMultipleFormats(
+    skill: Skill,
+    formats: TargetFormat[],
+  ): Promise<string[]> {
+    if (formats.length === 0) { return []; }
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+      throw new Error(vscode.l10n.t('No workspace folder open'));
+    }
+
+    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+    const safeId = sanitizeName(skill.id);
+
+    // Use canonical .agents/skills as the primary copy location
+    const canonicalDir = path.join(workspaceRoot, '.agents', 'skills', safeId);
+    await fs.mkdir(path.dirname(canonicalDir), { recursive: true });
+
+    if (await pathExists(canonicalDir)) {
+      await fs.rm(canonicalDir, { recursive: true, force: true });
+    }
+    await this.copyDirectory(skill.dirPath, canonicalDir);
+
+    const results: string[] = [canonicalDir];
+    const seenDirs = new Set<string>([canonicalDir]);
+
+    for (const format of formats) {
+      const config = TARGET_FORMATS[format];
+      const targetDir = path.join(workspaceRoot, config.skillsDir, safeId);
+
+      if (seenDirs.has(targetDir)) { continue; }
+      seenDirs.add(targetDir);
+
+      if (await pathExists(targetDir)) {
+        await fs.rm(targetDir, { recursive: true, force: true });
+      }
+
+      try {
+        await this.createSymlink(canonicalDir, targetDir);
+        results.push(targetDir);
+      } catch {
+        // Fall back to copy if symlink fails
+        await this.copyDirectory(canonicalDir, targetDir);
+        results.push(targetDir);
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * Import multiple skills at once
    */
-  async importMultipleToRepo(skills: Skill[], format: TargetFormat): Promise<string[]> {
+  async importMultipleToRepo(
+    skills: Skill[],
+    format: TargetFormat,
+    mode?: InstallMode,
+  ): Promise<string[]> {
     const results: string[] = [];
     for (const skill of skills) {
-      const targetDir = await this.importToRepo(skill, format);
+      const targetDir = await this.importToRepo(skill, format, mode);
       results.push(targetDir);
     }
     return results;
@@ -164,6 +244,59 @@ export class ImportExportService {
     });
 
     return selected?.format;
+  }
+
+  /**
+   * Show quick pick for install mode selection
+   */
+  async pickInstallMode(): Promise<InstallMode | undefined> {
+    const items: Array<{ label: string; description: string; detail: string; mode: InstallMode }> = [
+      {
+        label: vscode.l10n.t('Symlink (Recommended)'),
+        description: '',
+        detail: vscode.l10n.t('Creates symlinks to a canonical copy. Single source of truth, easy updates.'),
+        mode: 'symlink',
+      },
+      {
+        label: vscode.l10n.t('Copy'),
+        description: '',
+        detail: vscode.l10n.t('Creates independent copies. Use when symlinks are not supported.'),
+        mode: 'copy',
+      },
+    ];
+
+    const selected = await vscode.window.showQuickPick(items, {
+      placeHolder: vscode.l10n.t('Select install mode'),
+    });
+
+    return selected?.mode;
+  }
+
+  /**
+   * Read the configured default install mode from settings
+   */
+  private getConfiguredInstallMode(): InstallMode {
+    const config = vscode.workspace.getConfiguration('skilldock');
+    const mode = config.get<string>('installMode', 'copy');
+    return mode === 'symlink' ? 'symlink' : 'copy';
+  }
+
+  /**
+   * Create a symlink, falling back to copy on failure
+   */
+  private async createSymlink(source: string, target: string): Promise<void> {
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    try {
+      await fs.symlink(source, target, 'junction');
+    } catch {
+      // Fall back to directory symlink on non-Windows
+      try {
+        await fs.symlink(source, target, 'dir');
+      } catch {
+        // Ultimate fallback: copy
+        await this.copyDirectory(source, target);
+      }
+    }
   }
 
   /**
