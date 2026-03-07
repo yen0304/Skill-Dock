@@ -19,8 +19,15 @@
     "node": ">=18.0.0"
   },
   "categories": [
+    "Machine Learning",
+    "Snippets",
     "Other"
   ],
+  "galleryBanner": {
+    "color": "#1e1e2e",
+    "theme": "dark"
+  },
+  "qna": "marketplace",
   "keywords": [
     "agent",
     "skills",
@@ -43,7 +50,15 @@
     "droid",
     "kode",
     "openhands",
-    "ai"
+    "ai",
+    "mcp",
+    "prompt",
+    "prompt-engineering",
+    "agentic",
+    "ai-agent",
+    "skill-management",
+    "skills-sh",
+    "copilot"
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
