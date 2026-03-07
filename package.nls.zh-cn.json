@@ -1,0 +1,42 @@
+{
+  "displayName": "Skill Dock",
+  "description": "在本地管理、浏览和导入 Agent Skills。支持 Claude、Cursor、Codex 等多种格式。",
+
+  "viewsContainer.title": "Skill Dock",
+  "view.library.name": "技能库",
+  "view.repoSkills.name": "项目 Skills",
+  "view.marketplace.name": "Skill 市场",
+
+  "welcome.library": "您的技能库中尚无任何 Skill。\n[创建新 Skill](command:skilldock.createSkill)\n[打开技能库文件夹](command:skilldock.openLibraryFolder)",
+  "welcome.repoSkills": "此项目中尚无任何 Skill。\n[从技能库导入 Skill](command:skilldock.importSkill)",
+  "welcome.marketplace": "从 GitHub 浏览并安装 Agent Skills。\n[打开市场](command:skilldock.openMarketplace)\n[添加自定义来源](command:skilldock.addMarketplaceSource)",
+
+  "command.createSkill": "创建新 Skill",
+  "command.editSkill": "编辑 Skill",
+  "command.deleteSkill": "删除 Skill",
+  "command.importSkill": "导入 Skill 到项目",
+  "command.importSkillFromRepo": "保存 Skill 到技能库",
+  "command.addToLibrary": "加入技能库",
+  "command.viewSkill": "查看 Skill",
+  "command.previewSkill": "预览 Skill",
+  "command.refreshLibrary": "刷新技能库",
+  "command.refreshRepoSkills": "刷新项目 Skills",
+  "command.openLibraryFolder": "打开技能库文件夹",
+  "command.openManager": "打开 Skill 管理器",
+  "command.duplicateSkill": "复制 Skill",
+  "command.searchSkills": "搜索 Skills",
+  "command.openMarketplace": "打开 Skill 市场",
+  "command.openMarketplaceSource": "在市场中浏览来源",
+  "command.addMarketplaceSource": "添加市场来源",
+  "command.removeMarketplaceSource": "移除市场来源",
+  "command.sortLibrary": "排序技能库",
+  "command.setGithubToken": "设置 GitHub Token",
+  "command.clearGithubToken": "清除 GitHub Token",
+
+  "config.libraryPath.description": "技能库的自定义路径。默认为 ~/.skilldock/skills",
+  "config.defaultTarget.description": "导入 Skill 到项目时的默认目标格式",
+  "config.showRepoSkills.description": "在侧边栏显示项目 Skills 面板",
+  "config.marketplaceSources.description": "在市场中扫描 Agent Skills 的额外 GitHub 仓库 URL",
+  "config.librarySortBy.description": "技能库树形视图的排序方式（name、lastModified、author、mostUsed）",
+  "config.installMode.description": "Skills 导入到项目的方式：'copy' 创建独立副本，'symlink' 创建指向规范副本的符号链接"
+}

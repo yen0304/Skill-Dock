@@ -130,5 +130,27 @@
   "Creates symlinks to a canonical copy. Single source of truth, easy updates.": "建立指向規範副本的符號連結。單一來源，易於更新。",
   "Copy": "複製",
   "Creates independent copies. Use when symlinks are not supported.": "建立獨立副本。當不支援符號連結時使用。",
-  "Select install mode": "選擇安裝模式"
+  "Select install mode": "選擇安裝模式",
+
+  "skills.sh": "skills.sh",
+  "Sources": "來源",
+  "Search the skills.sh ecosystem...": "搜尋 skills.sh 生態系...",
+  "Search the open agent skills ecosystem powered by skills.sh. Discover skills from thousands of community repositories.": "搜尋由 skills.sh 提供的開放代理技能生態系。從數千個社群儲存庫中發現技能。",
+  "installs": "安裝次數",
+  "Searching skills.sh...": "正在搜尋 skills.sh...",
+  "No skills found. Try a different search query.": "找不到技能。請嘗試其他搜尋關鍵字。",
+  "Type at least 2 characters to search.": "請輸入至少 2 個字元以搜尋。",
+  "Installed \"{0}\" from skills.sh to your library.": "已從 skills.sh 將「{0}」安裝到管理庫。",
+  "Failed to install from registry: {0}": "從登錄庫安裝失敗：{0}",
+
+  "Skill Preview": "技能預覽",
+  "Preview Skill": "預覽技能",
+  "License:": "授權：",
+  "Compatibility:": "相容性：",
+  "Edit Skill": "編輯技能",
+  "Open in Editor": "在編輯器中開啟",
+  "Import to Repo": "匯入到儲存庫",
+  "No content available.": "沒有可用內容。",
+  "Open File": "開啟檔案",
+  "Files:": "檔案："
 }

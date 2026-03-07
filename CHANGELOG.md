@@ -5,6 +5,44 @@ All notable changes to the Skill Dock extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-03-07
+
+### Added
+
+- **Recursive folder support in Skill Library**: Skills containing subdirectories now display a proper nested tree structure. Folders are collapsible with `SkillFolderItem` nodes; files within subdirectories are correctly resolved with relative paths.
+- **Recursive folder support in Repo Skills**: `RepoSkillsProvider` now scans subdirectories recursively and displays expandable folder/file tree — matching the same behavior as the Skill Library.
+- **Shared tree builder**: `SkillLibraryProvider.buildChildEntries()` is now a public static method shared by both Library and Repo Skills providers, eliminating code duplication.
+- **SVG icons in Marketplace**: All emoji icons in the Marketplace panel replaced with inline SVG icons (package, cart, refresh, warning, star, folder, paperclip, chart, user, license, file, gear, edit). SVGs use `stroke="currentColor"` for seamless theme integration.
+- **Preview panel folder tree**: Skill Preview Panel sidebar now renders nested folders with collapsible toggles, matching the tree view structure.
+- **Multi-language README**: Added `README.ja.md` (Japanese), `README.zh-tw.md` (Traditional Chinese), and `README.zh-cn.md` (Simplified Chinese) alongside the existing English `README.md`.
+- **Simplified Chinese localization**: Added `l10n/bundle.l10n.zh-cn.json` and `package.nls.zh-cn.json` — full Simplified Chinese (zh-cn) UI translation for all extension strings.
+- **11 new tests** covering recursive `additionalFiles` scanning (storageService), `SkillFolderItem` creation/properties, deeply nested folder expansion (skillLibraryProvider), and repo skills folder expansion (repoSkillsProvider). Total: 443 tests.
+
+### Changed
+
+- `StorageService.readSkill()` now uses `readdir({ withFileTypes: true })` with recursive scanning. `additionalFiles` contains relative paths with trailing `/` for directories (e.g., `scripts/`, `scripts/helper.sh`).
+- `SkillFileItem` constructor now accepts a 4th `relativePath` parameter for proper nested file resolution.
+- `SkillLibraryProvider.getChildren()` handles `SkillFolderItem` expansion in addition to `SkillTreeItem` and `SkillFileItem`.
+- `RepoSkillsProvider.scanSkillsDir()` now collects `additionalFiles` recursively, matching the same logic as `StorageService`.
+- `LibraryTreeItem` union type expanded to include `SkillFolderItem`.
+
+## [0.7.0] - 2026-03-07
+
+### Added
+
+- **skills.sh ecosystem integration**: New "skills.sh" tab in the Agent Skill Marketplace lets you search and install skills from the entire [skills.sh](https://skills.sh) ecosystem — the same registry used by `npx skills`. Discover thousands of community-contributed agent skills directly from VS Code.
+- **`SkillsRegistryService`**: New service (`src/services/skillsRegistryService.ts`) wrapping the skills.sh search API. Supports fuzzy search, formatted install counts, and one-click install to your local library via the existing marketplace pipeline.
+- **Tabbed marketplace UI**: Marketplace panel now features a two-tab layout — "📦 Sources" (existing GitHub source browsing) and "▲ skills.sh" (ecosystem-wide search). Tabs preserve state when switching.
+- **Builtin sources expanded**: Added `vercel-labs/skills` (Vercel Skills) and `vercel-labs/agent-skills` (Vercel Agent Skills) as built-in marketplace sources, bringing the total to 5.
+- **Expandable skill tree**: Skill Library tree items now expand to show all files within the skill directory (SKILL.md + additional files). Click any file to open it directly in the editor.
+- **Skill Preview Panel**: New rich webview panel for previewing skills from the library. Shows rendered Markdown content, metadata, tags, and a file sidebar for browsing additional files. Includes "Edit Skill" and "Import to Repo" action buttons.
+- **Localization**: Japanese (ja) and Traditional Chinese (zh-tw) translations for all new skills.sh UI strings.
+
+### Changed
+
+- `MarketplacePanel.createOrShow()` now accepts an optional `SkillsRegistryService` parameter for registry search integration.
+- Marketplace detail view now hides/restores the tab bar when entering/leaving skill preview.
+
 ## [0.6.2] - 2026-03-05
 
 ### Changed
@@ -156,6 +194,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **i18n**: Multi-language support (English, Traditional Chinese, Japanese)
 - **Auto-detection**: Automatically scan and display skills in opened repositories
 
+[0.8.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.8.0
+[0.7.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.7.0
 [0.6.2]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.6.2
 [0.6.1]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.6.1
 [0.6.0]: https://github.com/yen0304/Skill-Dock/releases/tag/v0.6.0

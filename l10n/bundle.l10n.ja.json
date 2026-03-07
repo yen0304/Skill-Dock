@@ -130,5 +130,27 @@
   "Creates symlinks to a canonical copy. Single source of truth, easy updates.": "正規コピーへのシンボリックリンクを作成します。一元管理で更新が簡単です。",
   "Copy": "コピー",
   "Creates independent copies. Use when symlinks are not supported.": "独立したコピーを作成します。シンボリックリンクがサポートされていない場合に使用してください。",
-  "Select install mode": "インストールモードを選択"
+  "Select install mode": "インストールモードを選択",
+
+  "skills.sh": "skills.sh",
+  "Sources": "ソース",
+  "Search the skills.sh ecosystem...": "skills.shエコシステムを検索...",
+  "Search the open agent skills ecosystem powered by skills.sh. Discover skills from thousands of community repositories.": "skills.shが提供するオープンエージェントスキルエコシステムを検索。数千のコミュニティリポジトリからスキルを発見できます。",
+  "installs": "インストール数",
+  "Searching skills.sh...": "skills.shを検索中...",
+  "No skills found. Try a different search query.": "スキルが見つかりません。別の検索クエリをお試しください。",
+  "Type at least 2 characters to search.": "検索するには2文字以上入力してください。",
+  "Installed \"{0}\" from skills.sh to your library.": "skills.shから「{0}」をライブラリにインストールしました。",
+  "Failed to install from registry: {0}": "レジストリからのインストール失敗：{0}",
+
+  "Skill Preview": "スキルプレビュー",
+  "Preview Skill": "スキルをプレビュー",
+  "License:": "ライセンス：",
+  "Compatibility:": "互換性：",
+  "Edit Skill": "スキルを編集",
+  "Open in Editor": "エディタで開く",
+  "Import to Repo": "リポジトリにインポート",
+  "No content available.": "コンテンツがありません。",
+  "Open File": "ファイルを開く",
+  "Files:": "ファイル："
 }

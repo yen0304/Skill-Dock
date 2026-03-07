@@ -18,6 +18,7 @@
   "command.importSkillFromRepo": "儲存 Skill 到管理庫",
   "command.addToLibrary": "加入管理庫",
   "command.viewSkill": "檢視 Skill",
+  "command.previewSkill": "預覽 Skill",
   "command.refreshLibrary": "重新整理管理庫",
   "command.refreshRepoSkills": "重新整理專案 Skills",
   "command.openLibraryFolder": "開啟管理庫資料夾",

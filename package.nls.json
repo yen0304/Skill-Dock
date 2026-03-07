@@ -18,6 +18,7 @@
   "command.importSkillFromRepo": "Save Skill to Library",
   "command.addToLibrary": "Add to Library",
   "command.viewSkill": "View Skill",
+  "command.previewSkill": "Preview Skill",
   "command.refreshLibrary": "Refresh Library",
   "command.refreshRepoSkills": "Refresh Repo Skills",
   "command.openLibraryFolder": "Open Library Folder",

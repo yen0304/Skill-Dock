@@ -18,6 +18,7 @@
   "command.importSkillFromRepo": "スキルをライブラリに保存",
   "command.addToLibrary": "ライブラリに追加",
   "command.viewSkill": "スキルを表示",
+  "command.previewSkill": "スキルをプレビュー",
   "command.refreshLibrary": "ライブラリを更新",
   "command.refreshRepoSkills": "リポジトリスキルを更新",
   "command.openLibraryFolder": "ライブラリフォルダを開く",
@@ -36,5 +37,6 @@
   "config.defaultTarget.description": "スキルをリポジトリにインポートする際のデフォルトターゲット形式",
   "config.showRepoSkills.description": "サイドバーにリポジトリスキルパネルを表示する",
   "config.marketplaceSources.description": "マーケットプレイスでエージェントスキルをスキャンする追加のGitHubリポジトリURL",
-  "config.librarySortBy.description": "スキルライブラリツリービューの並べ替え順（name、lastModified、author、mostUsed）"
+  "config.librarySortBy.description": "スキルライブラリツリービューの並べ替え順（name、lastModified、author、mostUsed）",
+  "config.installMode.description": "スキルのリポジトリへのインストール方法：'copy' は独立したコピーを作成、'symlink' は正規コピーへのシンボリックリンクを作成"
 }

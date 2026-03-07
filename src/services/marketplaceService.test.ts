@@ -801,8 +801,8 @@ describe('MarketplaceService', () => {
   // Builtin sources validation
   // ----------------------------------------------------------
   describe('BUILTIN_MARKETPLACE_SOURCES', () => {
-    it('should have 3 builtin sources', () => {
-      expect(BUILTIN_MARKETPLACE_SOURCES).toHaveLength(3);
+    it('should have 5 builtin sources', () => {
+      expect(BUILTIN_MARKETPLACE_SOURCES).toHaveLength(5);
     });
 
     it('should all be marked as builtin', () => {

@@ -154,6 +154,24 @@ export const BUILTIN_MARKETPLACE_SOURCES: MarketplaceSource[] = [
     label: 'GitHub Copilot Skills',
     isBuiltin: true,
   },
+  {
+    id: 'vercel-labs/skills',
+    owner: 'vercel-labs',
+    repo: 'skills',
+    branch: 'main',
+    path: 'skills',
+    label: 'Vercel Skills (skills.sh)',
+    isBuiltin: true,
+  },
+  {
+    id: 'vercel-labs/agent-skills',
+    owner: 'vercel-labs',
+    repo: 'agent-skills',
+    branch: 'main',
+    path: '',
+    label: 'Vercel Agent Skills',
+    isBuiltin: true,
+  },
 ];
 
 export const TARGET_FORMATS: Record<TargetFormat, TargetFormatConfig> = {

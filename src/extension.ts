@@ -5,9 +5,11 @@ import { MarketplaceService } from './services/marketplaceService';
 import { SkillLibraryProvider, SkillTreeItem } from './providers/skillLibraryProvider';
 import { RepoSkillsProvider } from './providers/repoSkillsProvider';
 import { SkillEditorPanel } from './views/skillEditorPanel';
+import { SkillPreviewPanel } from './views/skillPreviewPanel';
 import { ManagerPanel } from './views/managerPanel';
 import { MarketplacePanel } from './views/marketplacePanel';
 import { MarketplaceTreeProvider, MarketplaceSourceItem } from './providers/marketplaceTreeProvider';
+import { SkillsRegistryService } from './services/skillsRegistryService';
 import { Skill } from './models/skill';
 import { ALL_SKILL_DIRS } from './models/skill';
 
@@ -21,6 +23,7 @@ export async function activate(context: vscode.ExtensionContext) {
     storageService,
     () => context.secrets.get('skilldock.githubToken'),
   );
+  const registryService = new SkillsRegistryService(marketplaceService);
 
   // Migrate legacy plaintext token from settings to SecretStorage
   const config = vscode.workspace.getConfiguration('skilldock');
@@ -120,6 +123,36 @@ export async function activate(context: vscode.ExtensionContext) {
       if (skill) {
         const doc = await vscode.workspace.openTextDocument(skill.filePath);
         await vscode.window.showTextDocument(doc);
+      }
+    })
+  );
+
+  // Preview skill (rich webview preview with file browser)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('skilldock.previewSkill', async (skillOrItem?: Skill | SkillTreeItem, _source?: string) => {
+      let skill: Skill | undefined;
+
+      if (skillOrItem instanceof SkillTreeItem) {
+        skill = skillOrItem.skill;
+      } else if (skillOrItem && 'filePath' in skillOrItem) {
+        skill = skillOrItem as Skill;
+      } else {
+        const picked = await pickSkill(storageService, vscode.l10n.t('Select skill to view'));
+        skill = picked || undefined;
+      }
+
+      if (skill) {
+        SkillPreviewPanel.createOrShow(
+          context.extensionUri,
+          skill,
+          (action, s) => {
+            if (action === 'edit') {
+              SkillEditorPanel.createOrShow(context.extensionUri, storageService, s, false, refreshAll);
+            } else if (action === 'import') {
+              vscode.commands.executeCommand('skilldock.importSkill', new SkillTreeItem(s, 'library'));
+            }
+          },
+        );
       }
     })
   );
@@ -378,7 +411,8 @@ export async function activate(context: vscode.ExtensionContext) {
       MarketplacePanel.createOrShow(
         context.extensionUri,
         marketplaceService,
-        refreshAll
+        registryService,
+        refreshAll,
       );
     })
   );
@@ -390,6 +424,7 @@ export async function activate(context: vscode.ExtensionContext) {
       MarketplacePanel.createOrShow(
         context.extensionUri,
         marketplaceService,
+        registryService,
         refreshAll,
         sourceId,
       );

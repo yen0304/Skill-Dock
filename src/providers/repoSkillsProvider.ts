@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Skill, TARGET_FORMATS, TargetFormat, ALL_SKILL_DIRS } from '../models/skill';
 import { parseFrontmatter } from '../utils/skillParser';
-import { SkillTreeItem } from './skillLibraryProvider';
+import { SkillTreeItem, SkillFileItem, SkillFolderItem, SkillLibraryProvider } from './skillLibraryProvider';
 
 const SKILL_MIME = 'application/vnd.code.tree.skilldock.reposkills';
 
@@ -120,6 +120,21 @@ export class RepoSkillsProvider implements vscode.TreeDataProvider<vscode.TreeIt
       return items;
     }
 
+    // Expanding a SkillTreeItem → show top-level files/folders
+    if (element instanceof SkillTreeItem) {
+      return SkillLibraryProvider.buildChildEntries(element.skill, '');
+    }
+
+    // Expanding a SkillFolderItem → show its direct children
+    if (element instanceof SkillFolderItem) {
+      return SkillLibraryProvider.buildChildEntries(element.skill, element.relativeDir);
+    }
+
+    // SkillFileItem has no children
+    if (element instanceof SkillFileItem) {
+      return [];
+    }
+
     // Children: show skills under each format group
     if (element instanceof FormatGroupItem) {
       const config = TARGET_FORMATS[element.format];
@@ -155,13 +170,32 @@ export class RepoSkillsProvider implements vscode.TreeDataProvider<vscode.TreeIt
           const { metadata, body } = parseFrontmatter(content);
           const stat = await fs.stat(skillFile);
 
+          // Collect additional files recursively
+          const skillDir = path.join(skillsDir, entry.name);
+          const additionalFiles: string[] = [];
+          const scanDir = async (dir: string, prefix: string): Promise<void> => {
+            const dirEntries = await fs.readdir(dir, { withFileTypes: true });
+            for (const de of dirEntries) {
+              const rel = prefix ? `${prefix}/${de.name}` : de.name;
+              if (de.name === 'SKILL.md' && !prefix) { continue; }
+              if (de.isDirectory()) {
+                additionalFiles.push(rel + '/');
+                await scanDir(path.join(dir, de.name), rel);
+              } else {
+                additionalFiles.push(rel);
+              }
+            }
+          };
+          await scanDir(skillDir, '');
+
           skills.push({
             id: entry.name,
             metadata,
             body,
-            dirPath: path.join(skillsDir, entry.name),
+            dirPath: skillDir,
             filePath: skillFile,
             lastModified: stat.mtimeMs,
+            additionalFiles: additionalFiles.length > 0 ? additionalFiles : undefined,
           });
         } catch {
           // Skip invalid skill files

@@ -2,7 +2,7 @@
   "name": "skill-dock",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.6.2",
+  "version": "0.8.0",
   "publisher": "skill-dock",
   "license": "MIT",
   "repository": {
@@ -133,6 +133,12 @@
         "title": "%command.viewSkill%",
         "category": "Skill Dock",
         "icon": "$(eye)"
+      },
+      {
+        "command": "skilldock.previewSkill",
+        "title": "%command.previewSkill%",
+        "category": "Skill Dock",
+        "icon": "$(preview)"
       },
       {
         "command": "skilldock.refreshLibrary",

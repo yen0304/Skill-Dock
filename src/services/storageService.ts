@@ -170,14 +170,22 @@ export class StorageService {
     const { metadata, body } = parseFrontmatter(content);
     const stat = await fs.stat(skillFile);
 
-    // Find additional files
+    // Find additional files (recursive – relative paths)
     const additionalFiles: string[] = [];
-    const allEntries = await fs.readdir(skillDir);
-    for (const entry of allEntries) {
-      if (entry !== 'SKILL.md') {
-        additionalFiles.push(entry);
+    const scanDir = async (dir: string, prefix: string): Promise<void> => {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.name === 'SKILL.md' && !prefix) { continue; }
+        if (entry.isDirectory()) {
+          additionalFiles.push(rel + '/');
+          await scanDir(path.join(dir, entry.name), rel);
+        } else {
+          additionalFiles.push(rel);
+        }
       }
-    }
+    };
+    await scanDir(skillDir, '');
 
     return {
       id,

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { SkillLibraryProvider, SkillTreeItem } from './skillLibraryProvider';
+import { SkillLibraryProvider, SkillTreeItem, SkillFileItem, SkillFolderItem } from './skillLibraryProvider';
 import { StorageService } from '../services/storageService';
 import { ImportExportService } from '../services/importExportService';
 import { Skill } from '../models/skill';
@@ -47,9 +47,9 @@ describe('SkillTreeItem', () => {
     expect(item.label).toBe('Test Skill');
   });
 
-  it('should have TreeItemCollapsibleState.None', () => {
+  it('should have TreeItemCollapsibleState.Collapsed', () => {
     const item = new SkillTreeItem(sampleSkill, 'library');
-    expect(item.collapsibleState).toBe(TreeItemCollapsibleState.None);
+    expect(item.collapsibleState).toBe(TreeItemCollapsibleState.Collapsed);
   });
 
   it('should have tooltip with metadata', () => {
@@ -85,10 +85,10 @@ describe('SkillTreeItem', () => {
     expect((item.iconPath as any).id).toBe('symbol-method');
   });
 
-  it('should have viewSkill command', () => {
+  it('should have previewSkill command', () => {
     const item = new SkillTreeItem(sampleSkill, 'library');
     expect(item.command).toBeDefined();
-    expect((item.command as any).command).toBe('skilldock.viewSkill');
+    expect((item.command as any).command).toBe('skilldock.previewSkill');
   });
 
   it('should store skill reference', () => {
@@ -138,6 +138,181 @@ describe('SkillTreeItem', () => {
     const item = new SkillTreeItem(skillNoFiles, 'library');
     const tooltip = item.tooltip!.toString();
     expect(tooltip).not.toContain('Files:');
+  });
+});
+
+// ----------------------------------------------------------
+// SkillFileItem
+// ----------------------------------------------------------
+describe('SkillFileItem', () => {
+  it('should create a file item with correct name and path', () => {
+    const item = new SkillFileItem(
+      { id: 's', metadata: { name: 'S', description: '' }, body: '', dirPath: '/d', filePath: '/d/SKILL.md', lastModified: 0 },
+      'README.md',
+      '/d/README.md',
+      'README.md',
+    );
+    expect(item.label).toBe('README.md');
+    expect(item.contextValue).toBe('skillFile');
+    expect(item.collapsibleState).toBe(TreeItemCollapsibleState.None);
+  });
+
+  it('should use file-text icon for SKILL.md', () => {
+    const item = new SkillFileItem(
+      { id: 's', metadata: { name: 'S', description: '' }, body: '', dirPath: '/d', filePath: '/d/SKILL.md', lastModified: 0 },
+      'SKILL.md',
+      '/d/SKILL.md',
+      'SKILL.md',
+    );
+    expect((item.iconPath as any).id).toBe('file-text');
+  });
+
+  it('should have vscode.open command', () => {
+    const item = new SkillFileItem(
+      { id: 's', metadata: { name: 'S', description: '' }, body: '', dirPath: '/d', filePath: '/d/SKILL.md', lastModified: 0 },
+      'helper.js',
+      '/d/helper.js',
+      'helper.js',
+    );
+    expect(item.command).toBeDefined();
+    expect((item.command as any).command).toBe('vscode.open');
+  });
+});
+
+describe('SkillFolderItem', () => {
+  const sampleSkill: Skill = {
+    id: 'test-skill',
+    metadata: { name: 'Test', description: 'desc' },
+    body: '',
+    dirPath: '/tmp/skills/test-skill',
+    filePath: '/tmp/skills/test-skill/SKILL.md',
+    lastModified: Date.now(),
+  };
+
+  it('should create a folder item with Collapsed state', () => {
+    const item = new SkillFolderItem(sampleSkill, 'scripts', 'scripts/');
+    expect(item.label).toBe('scripts');
+    expect(item.collapsibleState).toBe(TreeItemCollapsibleState.Collapsed);
+    expect(item.contextValue).toBe('skillFolder');
+  });
+
+  it('should use folder icon', () => {
+    const item = new SkillFolderItem(sampleSkill, 'docs', 'docs/');
+    expect((item.iconPath as any).id).toBe('folder');
+  });
+
+  it('should store relativeDir', () => {
+    const item = new SkillFolderItem(sampleSkill, 'scripts', 'scripts/');
+    expect(item.relativeDir).toBe('scripts/');
+  });
+});
+
+// ----------------------------------------------------------
+// SkillLibraryProvider - expandable children
+// ----------------------------------------------------------
+describe('SkillLibraryProvider children', () => {
+  const sampleSkill: Skill = {
+    id: 'test-skill',
+    metadata: { name: 'Test', description: 'desc', author: 'a' },
+    body: '# Test',
+    dirPath: '/tmp/skills/test-skill',
+    filePath: '/tmp/skills/test-skill/SKILL.md',
+    lastModified: Date.now(),
+    additionalFiles: ['ref.md', 'scripts/', 'scripts/helper.sh'],
+  };
+
+  it('should return files and folders when expanding a SkillTreeItem', async () => {
+    const mockStorage = {
+      listSkills: vi.fn().mockResolvedValue([]),
+      onDidChange: vi.fn().mockReturnValue({ dispose: () => {} }),
+    } as any;
+    const provider = new SkillLibraryProvider(mockStorage);
+
+    const treeItem = new SkillTreeItem(sampleSkill, 'library');
+    const children = await provider.getChildren(treeItem);
+
+    // SKILL.md + ref.md (file) + scripts (folder) = 3
+    expect(children).toHaveLength(3);
+    expect(children[0]).toBeInstanceOf(SkillFileItem);
+    expect((children[0] as SkillFileItem).fileName).toBe('SKILL.md');
+    expect(children[1]).toBeInstanceOf(SkillFileItem);
+    expect((children[1] as SkillFileItem).fileName).toBe('ref.md');
+    expect(children[2]).toBeInstanceOf(SkillFolderItem);
+    expect((children[2] as SkillFolderItem).folderName).toBe('scripts');
+  });
+
+  it('should return folder children when expanding a SkillFolderItem', async () => {
+    const mockStorage = {
+      listSkills: vi.fn().mockResolvedValue([]),
+      onDidChange: vi.fn().mockReturnValue({ dispose: () => {} }),
+    } as any;
+    const provider = new SkillLibraryProvider(mockStorage);
+
+    const folderItem = new SkillFolderItem(sampleSkill, 'scripts', 'scripts/');
+    const children = await provider.getChildren(folderItem);
+
+    expect(children).toHaveLength(1);
+    expect(children[0]).toBeInstanceOf(SkillFileItem);
+    expect((children[0] as SkillFileItem).fileName).toBe('helper.sh');
+  });
+
+  it('should return only SKILL.md when no additional files', async () => {
+    const mockStorage = {
+      listSkills: vi.fn().mockResolvedValue([]),
+      onDidChange: vi.fn().mockReturnValue({ dispose: () => {} }),
+    } as any;
+    const provider = new SkillLibraryProvider(mockStorage);
+
+    const skillNoExtra = { ...sampleSkill, additionalFiles: undefined };
+    const treeItem = new SkillTreeItem(skillNoExtra, 'library');
+    const children = await provider.getChildren(treeItem);
+
+    expect(children).toHaveLength(1);
+    expect((children[0] as SkillFileItem).fileName).toBe('SKILL.md');
+  });
+
+  it('should return empty for SkillFileItem', async () => {
+    const mockStorage = {
+      listSkills: vi.fn().mockResolvedValue([]),
+      onDidChange: vi.fn().mockReturnValue({ dispose: () => {} }),
+    } as any;
+    const provider = new SkillLibraryProvider(mockStorage);
+
+    const fileItem = new SkillFileItem(sampleSkill, 'SKILL.md', sampleSkill.filePath, 'SKILL.md');
+    const children = await provider.getChildren(fileItem);
+    expect(children).toHaveLength(0);
+  });
+
+  it('should handle deeply nested folders', async () => {
+    const nestedSkill: Skill = {
+      ...sampleSkill,
+      additionalFiles: ['docs/', 'docs/api/', 'docs/api/ref.md', 'docs/guide.md'],
+    };
+    const mockStorage = {
+      listSkills: vi.fn().mockResolvedValue([]),
+      onDidChange: vi.fn().mockReturnValue({ dispose: () => {} }),
+    } as any;
+    const provider = new SkillLibraryProvider(mockStorage);
+
+    // Root: SKILL.md + docs/
+    const root = await provider.getChildren(new SkillTreeItem(nestedSkill, 'library'));
+    expect(root).toHaveLength(2);
+    expect(root[1]).toBeInstanceOf(SkillFolderItem);
+    expect((root[1] as SkillFolderItem).folderName).toBe('docs');
+
+    // docs/: api/ + guide.md
+    const docsChildren = await provider.getChildren(root[1] as SkillFolderItem);
+    expect(docsChildren).toHaveLength(2);
+    expect(docsChildren[0]).toBeInstanceOf(SkillFolderItem);
+    expect((docsChildren[0] as SkillFolderItem).folderName).toBe('api');
+    expect(docsChildren[1]).toBeInstanceOf(SkillFileItem);
+    expect((docsChildren[1] as SkillFileItem).fileName).toBe('guide.md');
+
+    // docs/api/: ref.md
+    const apiChildren = await provider.getChildren(docsChildren[0] as SkillFolderItem);
+    expect(apiChildren).toHaveLength(1);
+    expect(apiChildren[0]).toBeInstanceOf(SkillFileItem);
+    expect((apiChildren[0] as SkillFileItem).fileName).toBe('ref.md');
   });
 });
 

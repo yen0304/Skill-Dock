@@ -2,6 +2,8 @@
 
 > Local-first agent skill manager for VS Code / Cursor.
 
+English | [繁體中文](README.zh-tw.md) | [简体中文](README.zh-cn.md) | [日本語](README.ja.md)
+
 [![CI](https://github.com/yen0304/Skill-Dock/actions/workflows/ci.yml/badge.svg)](https://github.com/yen0304/Skill-Dock/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/yen0304/Skill-Dock/branch/main/graph/badge.svg)](https://codecov.io/gh/yen0304/Skill-Dock)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -44,7 +46,8 @@ Full CRUD operations: create, view, edit, delete, duplicate, and search.
 
 Browse and install agent skills from GitHub repositories:
 
-- **Built-in sources**: Anthropic Skills, OpenAI Skills, GitHub Awesome Copilot Skills
+- **Built-in sources**: Anthropic Skills, OpenAI Skills, GitHub Awesome Copilot Skills, Vercel Skills, Vercel Agent Skills
+- **skills.sh ecosystem search**: Search the entire [skills.sh](https://skills.sh) registry (the same backend used by `npx skills`) directly from the marketplace. Discover thousands of community skills and install them to your library with one click.
 - **Custom sources**: Add any GitHub repo URL as a skill source
 - **In-panel preview**: Click a skill to see its full rendered content
 - **Source filters**: Multi-select chips with Select All / Deselect All toggle
@@ -102,6 +105,7 @@ Visual form-based editor for creating and editing skills — metadata fields (na
 |----------|------|
 | English | `en` (default) |
 | 繁體中文 | `zh-tw` |
+| 简体中文 | `zh-cn` |
 | 日本語 | `ja` |
 
 Follows your VS Code display language automatically.

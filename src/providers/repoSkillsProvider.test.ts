@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { workspace, DataTransfer, DataTransferItem } from 'vscode';
 import { RepoSkillsProvider } from './repoSkillsProvider';
-import { SkillTreeItem } from './skillLibraryProvider';
+import { SkillTreeItem, SkillFileItem, SkillFolderItem } from './skillLibraryProvider';
 
 describe('RepoSkillsProvider', () => {
   let tmpDir: string;
@@ -241,5 +241,95 @@ describe('RepoSkillsProvider', () => {
 
   it('should have empty drop MIME types', () => {
     expect(provider.dropMimeTypes).toEqual([]);
+  });
+
+  // ----------------------------------------------------------
+  // Expandable skill items – file/folder children
+  // ----------------------------------------------------------
+  it('should collect additionalFiles recursively from repo skills', async () => {
+    const skillDir = path.join(tmpDir, '.claude', 'skills', 'nested-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      '---\nname: Nested\ndescription: Has folders\n---\nBody'
+    );
+    fs.writeFileSync(path.join(skillDir, 'config.json'), '{}');
+    fs.mkdirSync(path.join(skillDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'scripts', 'helper.sh'), '#!/bin/bash');
+
+    (workspace as any).workspaceFolders = [{ uri: { fsPath: tmpDir } }];
+
+    const groups = await provider.getChildren();
+    const skills = await provider.getChildren(groups[0]);
+    expect(skills.length).toBe(1);
+    const skill = (skills[0] as SkillTreeItem).skill;
+    expect(skill.additionalFiles).toBeDefined();
+    expect(skill.additionalFiles).toContain('config.json');
+    expect(skill.additionalFiles).toContain('scripts/');
+    expect(skill.additionalFiles).toContain('scripts/helper.sh');
+  });
+
+  it('should expand SkillTreeItem to show file/folder children', async () => {
+    const skillDir = path.join(tmpDir, '.claude', 'skills', 'expandable');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      '---\nname: Expandable\ndescription: Test\n---\nBody'
+    );
+    fs.writeFileSync(path.join(skillDir, 'extra.md'), '# Extra');
+    fs.mkdirSync(path.join(skillDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'scripts', 'run.sh'), '#!/bin/bash');
+
+    (workspace as any).workspaceFolders = [{ uri: { fsPath: tmpDir } }];
+
+    const groups = await provider.getChildren();
+    const skills = await provider.getChildren(groups[0]);
+    const treeItem = skills[0] as SkillTreeItem;
+
+    const children = await provider.getChildren(treeItem);
+    // SKILL.md + extra.md + scripts/
+    expect(children.length).toBe(3);
+    expect(children[0]).toBeInstanceOf(SkillFileItem);
+    expect((children[0] as SkillFileItem).fileName).toBe('SKILL.md');
+    expect(children[1]).toBeInstanceOf(SkillFileItem);
+    expect((children[1] as SkillFileItem).fileName).toBe('extra.md');
+    expect(children[2]).toBeInstanceOf(SkillFolderItem);
+    expect((children[2] as SkillFolderItem).folderName).toBe('scripts');
+  });
+
+  it('should expand SkillFolderItem to show nested children', async () => {
+    const skillDir = path.join(tmpDir, '.claude', 'skills', 'deep');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      '---\nname: Deep\ndescription: Test\n---\nBody'
+    );
+    fs.mkdirSync(path.join(skillDir, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'docs', 'guide.md'), '# Guide');
+
+    (workspace as any).workspaceFolders = [{ uri: { fsPath: tmpDir } }];
+
+    const groups = await provider.getChildren();
+    const skills = await provider.getChildren(groups[0]);
+    const treeItem = skills[0] as SkillTreeItem;
+    const children = await provider.getChildren(treeItem);
+
+    const folderItem = children.find(c => c instanceof SkillFolderItem) as SkillFolderItem;
+    expect(folderItem).toBeDefined();
+
+    const folderChildren = await provider.getChildren(folderItem);
+    expect(folderChildren.length).toBe(1);
+    expect(folderChildren[0]).toBeInstanceOf(SkillFileItem);
+    expect((folderChildren[0] as SkillFileItem).fileName).toBe('guide.md');
+  });
+
+  it('should return empty for SkillFileItem expansion', async () => {
+    const skill = {
+      id: 'test', metadata: { name: 'T', description: '' }, body: '',
+      dirPath: '/tmp/d', filePath: '/tmp/d/SKILL.md', lastModified: 0,
+    };
+    const fileItem = new SkillFileItem(skill, 'SKILL.md', '/tmp/d/SKILL.md', 'SKILL.md');
+    const children = await provider.getChildren(fileItem);
+    expect(children).toEqual([]);
   });
 });

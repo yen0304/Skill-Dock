@@ -136,6 +136,36 @@ describe('StorageService', () => {
       expect(skill).not.toBeNull();
       expect(skill!.metadata.name).toBe('Readable');
     });
+
+    it('should detect additional files with recursive directory scan', async () => {
+      await service.createSkill('with-dirs', {
+        name: 'With Dirs',
+        description: 'Has nested dirs',
+      }, 'Body');
+
+      // Create nested directory structure
+      const skillDir = path.join(service.libraryPath, 'with-dirs');
+      fs.writeFileSync(path.join(skillDir, 'config.json'), '{}');
+      fs.mkdirSync(path.join(skillDir, 'scripts'), { recursive: true });
+      fs.writeFileSync(path.join(skillDir, 'scripts', 'helper.sh'), '#!/bin/bash');
+      fs.mkdirSync(path.join(skillDir, 'docs', 'api'), { recursive: true });
+      fs.writeFileSync(path.join(skillDir, 'docs', 'guide.md'), '# Guide');
+      fs.writeFileSync(path.join(skillDir, 'docs', 'api', 'ref.md'), '# Ref');
+
+      const skill = await service.readSkill('with-dirs');
+      expect(skill).not.toBeNull();
+      const af = skill!.additionalFiles!;
+      expect(af).toBeDefined();
+
+      // Should contain directory markers (trailing /) and file relative paths
+      expect(af).toContain('config.json');
+      expect(af).toContain('scripts/');
+      expect(af).toContain('scripts/helper.sh');
+      expect(af).toContain('docs/');
+      expect(af).toContain('docs/guide.md');
+      expect(af).toContain('docs/api/');
+      expect(af).toContain('docs/api/ref.md');
+    });
   });
 
   describe('listSkills', () => {

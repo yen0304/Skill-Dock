@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { MarketplaceService } from '../services/marketplaceService';
+import { SkillsRegistryService, RegistrySkillEntry } from '../services/skillsRegistryService';
 
 /** Messages sent from the extension host to the marketplace webview */
 interface WebviewMessage {
@@ -32,6 +33,15 @@ function getMarketplaceStrings() {
     deselectAll: vscode.l10n.t('Deselect All'),
     loadingFile: vscode.l10n.t('Loading file...'),
     loadError: vscode.l10n.t('Failed to load marketplace'),
+    registryTab: vscode.l10n.t('skills.sh'),
+    sourcesTab: vscode.l10n.t('Sources'),
+    registrySearchPlaceholder: vscode.l10n.t('Search the skills.sh ecosystem...'),
+    registryHint: vscode.l10n.t('Search the open agent skills ecosystem powered by skills.sh. Discover skills from thousands of community repositories.'),
+    registryInstalls: vscode.l10n.t('installs'),
+    registryInstallToLibrary: vscode.l10n.t('Add to Library'),
+    registrySearching: vscode.l10n.t('Searching skills.sh...'),
+    registryNoResults: vscode.l10n.t('No skills found. Try a different search query.'),
+    registryMinChars: vscode.l10n.t('Type at least 2 characters to search.'),
   };
 }
 
@@ -47,6 +57,7 @@ export class MarketplacePanel {
   private constructor(
     panel: vscode.WebviewPanel,
     private marketplaceService: MarketplaceService,
+    private registryService: SkillsRegistryService,
     private readonly _extensionUri: vscode.Uri,
     private onRefresh: () => void,
   ) {
@@ -83,6 +94,12 @@ export class MarketplacePanel {
           case 'removeSource':
             await this._handleRemoveSource(msg.sourceId);
             break;
+          case 'searchRegistry':
+            await this._handleSearchRegistry(msg.query);
+            break;
+          case 'installFromRegistry':
+            await this._handleInstallFromRegistry(msg.entry);
+            break;
         }
       },
       null,
@@ -93,6 +110,7 @@ export class MarketplacePanel {
   static createOrShow(
     extensionUri: vscode.Uri,
     marketplaceService: MarketplaceService,
+    registryService: SkillsRegistryService,
     onRefresh: () => void,
     filterSourceId?: string,
   ): void {
@@ -120,6 +138,7 @@ export class MarketplacePanel {
     MarketplacePanel.currentPanel = new MarketplacePanel(
       panel,
       marketplaceService,
+      registryService,
       extensionUri,
       onRefresh,
     );
@@ -339,6 +358,63 @@ export class MarketplacePanel {
     } catch (err) {
       const errMsg = vscode.l10n.t('Failed to load file: {0}', String(err));
       vscode.window.showErrorMessage(errMsg);
+      this._postMessage({ command: 'toast', message: errMsg, type: 'error' });
+    }
+  }
+
+  private async _handleSearchRegistry(query: string): Promise<void> {
+    try {
+      this._postMessage({ command: 'registrySearching' });
+      const result = await this.registryService.search(query, 30);
+      this._postMessage({
+        command: 'registryResults',
+        skills: result.skills.map((s) => ({
+          id: s.id,
+          skillId: s.skillId,
+          name: s.name,
+          installs: s.installs,
+          source: s.source,
+          installsLabel: SkillsRegistryService.formatInstalls(s.installs),
+        })),
+      });
+    } catch (err) {
+      const errMsg = vscode.l10n.t('skills.sh search failed: {0}', String(err));
+      this._postMessage({ command: 'registryResults', skills: [], error: errMsg });
+    }
+  }
+
+  private async _handleInstallFromRegistry(entry: RegistrySkillEntry): Promise<void> {
+    try {
+      this._postMessage({ command: 'registryInstalling', skillId: entry.skillId });
+      await this.registryService.installFromRegistry(entry);
+      this.onRefresh();
+
+      vscode.window.showInformationMessage(
+        vscode.l10n.t('Installed "{0}" to your library.', entry.name)
+      );
+
+      this._postMessage({ command: 'registryInstalled', skillId: entry.skillId });
+
+      // Also refresh the "Sources" tab installed state
+      const installedIds = await this.marketplaceService.getInstalledIds();
+      const installedVersions = await this.marketplaceService.getInstalledVersionMap();
+      const skills = await this.marketplaceService.fetchAll(false).catch(() => [] as import('../models/skill').RemoteSkill[]);
+      const hasUpdateMap: Record<string, boolean> = {};
+      for (const s of skills) {
+        const installed = installedIds.has(s.id);
+        const remoteVersion = s.metadata.version;
+        const localVersion = installedVersions.get(s.id);
+        hasUpdateMap[s.id] = installed && !!remoteVersion && !!localVersion && remoteVersion !== localVersion;
+      }
+      this._postMessage({
+        command: 'updateInstalled',
+        installedIds: [...installedIds],
+        hasUpdateMap,
+      });
+    } catch (err) {
+      const errMsg = vscode.l10n.t('Install failed: {0}', String(err));
+      vscode.window.showErrorMessage(errMsg);
+      this._postMessage({ command: 'registryInstallFailed', skillId: entry.skillId, error: errMsg });
       this._postMessage({ command: 'toast', message: errMsg, type: 'error' });
     }
   }
@@ -801,14 +877,119 @@ export class MarketplacePanel {
       font-family: inherit; font-size: 0.9em;
     }
     .error-state .retry-btn:hover { opacity: 0.9; }
+
+    /* ---- Tab bar ---- */
+    .tab-bar {
+      display: flex; border-bottom: 1px solid var(--border);
+      padding: 0 24px; background: color-mix(in srgb, var(--bg) 95%, var(--fg) 5%);
+    }
+    .tab-btn {
+      padding: 10px 18px; border: none; border-bottom: 2px solid transparent;
+      background: none; color: var(--desc-fg);
+      font-family: inherit; font-size: 0.9em; font-weight: 500;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--fg); }
+    .tab-btn.active {
+      color: var(--fg); border-bottom-color: var(--btn-bg);
+    }
+    .tab-btn .tab-badge {
+      font-size: 0.75em; padding: 1px 6px; margin-left: 5px;
+      background: var(--badge-bg); color: var(--badge-fg);
+      border-radius: 10px; vertical-align: middle;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ---- skills.sh registry panel ---- */
+    .registry-panel { padding: 0; }
+    .registry-search-header {
+      padding: 20px 24px 16px; border-bottom: 1px solid var(--border);
+    }
+    .registry-search-header h2 {
+      font-size: 1.2em; font-weight: 600; margin-bottom: 8px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .registry-search-header .registry-hint {
+      font-size: 0.85em; color: var(--desc-fg); margin-bottom: 12px; line-height: 1.5;
+    }
+    .registry-search-row {
+      display: flex; gap: 8px; align-items: center;
+    }
+    .registry-search-box {
+      flex: 1; min-width: 200px;
+      padding: 8px 12px;
+      background: var(--input-bg); color: var(--input-fg);
+      border: 1px solid var(--input-border); border-radius: 4px;
+      font-family: inherit; font-size: inherit;
+    }
+    .registry-search-box:focus { outline: none; border-color: var(--focus); }
+    .registry-results-list { list-style: none; }
+    .registry-skill-item {
+      display: flex; align-items: center;
+      padding: 14px 24px; border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+    .registry-skill-item:hover { background: var(--list-hover); }
+    .registry-skill-icon {
+      width: 38px; height: 38px;
+      background: var(--badge-bg); color: var(--badge-fg);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2em; margin-right: 14px; flex-shrink: 0;
+    }
+    .registry-skill-info { flex: 1; min-width: 0; }
+    .registry-skill-name { font-weight: 600; margin-bottom: 2px; }
+    .registry-skill-source {
+      font-size: 0.82em; color: var(--desc-fg);
+      display: flex; align-items: center; gap: 4px;
+    }
+    .registry-installs-badge {
+      font-size: 0.75em; padding: 2px 8px;
+      background: color-mix(in srgb, var(--btn-bg) 15%, var(--bg) 85%);
+      color: var(--btn-bg); border-radius: 10px; font-weight: 600;
+      white-space: nowrap;
+    }
+    .registry-skill-actions { flex-shrink: 0; margin-left: 12px; }
+    .registry-install-btn {
+      padding: 5px 14px; border: none; border-radius: 4px; cursor: pointer;
+      font-family: inherit; font-size: 0.85em;
+      background: var(--btn-bg); color: var(--btn-fg);
+    }
+    .registry-install-btn:hover { background: var(--btn-hover); }
+    .registry-install-btn.installed {
+      background: transparent; color: var(--success-fg);
+      cursor: default; font-weight: 600;
+    }
+    .registry-install-btn.loading {
+      opacity: 0.6; cursor: wait;
+    }
+    .registry-empty {
+      text-align: center; padding: 60px 24px; color: var(--desc-fg);
+    }
+    .registry-empty h3 { font-weight: 500; margin-bottom: 6px; }
+    .powered-by {
+      font-size: 0.75em; color: var(--desc-fg); padding: 12px 24px;
+      text-align: center; border-top: 1px solid var(--border);
+    }
+    .powered-by a { color: var(--vscode-textLink-foreground, #4fc1ff); text-decoration: none; }
+    .powered-by a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="sources"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>${t.sourcesTab}</button>
+    <button class="tab-btn" data-tab="registry"><svg width="12" height="12" viewBox="0 0 76 65" fill="currentColor" style="vertical-align:-1px;margin-right:4px"><path d="M37.5274 0L75.0548 65H0L37.5274 0Z"/></svg>${t.registryTab}</button>
+  </div>
+
+  <!-- Tab: Sources (existing marketplace) -->
+  <div class="tab-panel active" id="sourcesPanel">
   <div class="header">
-    <h1>\u{1F6D2} ${t.title}</h1>
+    <h1><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>${t.title}</h1>
     <div class="header-row">
       <input type="text" class="search-box" id="searchBox" placeholder="${t.searchPlaceholder}" />
-      <button class="header-btn primary" id="refreshBtn">\u{21BB} ${t.refreshBtn}</button>
+      <button class="header-btn primary" id="refreshBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>${t.refreshBtn}</button>
       <button class="header-btn" id="addSourceBtn">+ ${t.addSourceBtn}</button>
       <span class="stats" id="stats"></span>
     </div>
@@ -828,12 +1009,38 @@ export class MarketplacePanel {
       <p>${t.noSkillsHint}</p>
     </div>
     <div class="error-state" id="errorState">
-      <h2>\u{26A0}\u{FE0F} ${t.loadError}</h2>
+      <h2><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;color:var(--vscode-editorWarning-foreground,#cca700)"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>${t.loadError}</h2>
       <div class="error-detail" id="errorDetail"></div>
-      <button class="retry-btn" id="retryBtn">\u{21BB} ${t.refreshBtn}</button>
+      <button class="retry-btn" id="retryBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>${t.refreshBtn}</button>
     </div>
   </div>
   <div class="toast-container" id="toastContainer"></div>
+  </div><!-- end sourcesPanel -->
+
+  <!-- Tab: skills.sh Registry -->
+  <div class="tab-panel" id="registryPanel">
+    <div class="registry-search-header">
+      <h2><svg width="18" height="18" viewBox="0 0 76 65" fill="currentColor" style="vertical-align:-2px;margin-right:6px"><path d="M37.5274 0L75.0548 65H0L37.5274 0Z"/></svg>${t.registryTab} <span style="font-size:0.6em;font-weight:normal;color:var(--desc-fg)">— skills.sh</span></h2>
+      <p class="registry-hint">${t.registryHint}</p>
+      <div class="registry-search-row">
+        <input type="text" class="registry-search-box" id="registrySearchBox" placeholder="${t.registrySearchPlaceholder}" />
+      </div>
+    </div>
+    <div id="registryContent">
+      <div class="registry-empty" id="registryInitial">
+        <h3><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;margin-right:4px"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.82 20 12 16.54 7.18 20l1.64-6.91L3.82 9l6.09-.74z"/></svg>${t.registryMinChars}</h3>
+      </div>
+      <div class="registry-empty hidden-initial" id="registrySearching">
+        <div class="spinner"></div>
+        <h3>${t.registrySearching}</h3>
+      </div>
+      <div class="registry-empty hidden-initial" id="registryNoResults">
+        <h3>${t.registryNoResults}</h3>
+      </div>
+      <ul class="registry-results-list hidden-initial" id="registryResultsList"></ul>
+    </div>
+    <div class="powered-by"><svg width="11" height="11" viewBox="0 0 76 65" fill="currentColor" style="vertical-align:-1px;margin-right:3px"><path d="M37.5274 0L75.0548 65H0L37.5274 0Z"/></svg>Powered by <a href="https://skills.sh" target="_blank">skills.sh</a> — the open agent skills ecosystem</div>
+  </div><!-- end registryPanel -->
 
   <!-- Detail / Preview View -->
   <div class="detail-view" id="detailView">
@@ -847,7 +1054,7 @@ export class MarketplacePanel {
     <div class="detail-meta-bar" id="detailMeta"></div>
     <div class="detail-workspace">
       <div class="file-explorer hidden" id="fileExplorer">
-        <div class="explorer-title">\u{1F4C2} Files</div>
+        <div class="explorer-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Files</div>
         <ul class="file-tree" id="fileTree"></ul>
       </div>
       <div class="detail-body" id="detailBody">
@@ -870,6 +1077,8 @@ export class MarketplacePanel {
       selectAll: t.selectAll,
       deselectAll: t.deselectAll,
       loadingFile: t.loadingFile,
+      registryInstallToLibrary: t.registryInstallToLibrary,
+      registryInstalls: t.registryInstalls,
     })};
 
     let allSkills = [];
@@ -878,6 +1087,16 @@ export class MarketplacePanel {
     let hasUpdateMap = {};
     let activeSourceIds = new Set();
     let searchQuery = '';
+
+    // SVG icon constants (avoids emoji rendering issues)
+    var svgPackage = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>';
+    var svgClip = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>';
+    var svgChart = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>';
+    var svgUser = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+    var svgLicense = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13\" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>';
+    var svgFileDoc = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+    var svgGear = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>';
+    var svgEdit = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
 
     const searchBox      = document.getElementById('searchBox');
     const sourceFilters  = document.getElementById('sourceFilters');
@@ -902,7 +1121,31 @@ export class MarketplacePanel {
     const retryBtn       = document.getElementById('retryBtn');
     const toastContainer = document.getElementById('toastContainer');
 
+    // Registry tab elements
+    const registrySearchBox  = document.getElementById('registrySearchBox');
+    const registryInitial    = document.getElementById('registryInitial');
+    const registrySearching  = document.getElementById('registrySearching');
+    const registryNoResults  = document.getElementById('registryNoResults');
+    const registryResultsList = document.getElementById('registryResultsList');
+    var registryInstalledSet = new Set();
+
     var currentPreviewSkill = null;
+
+    // ---- Tab switching ----
+    document.querySelectorAll('.tab-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+        btn.classList.add('active');
+        var tabId = btn.getAttribute('data-tab');
+        if (tabId === 'sources') {
+          document.getElementById('sourcesPanel').classList.add('active');
+        } else if (tabId === 'registry') {
+          document.getElementById('registryPanel').classList.add('active');
+          registrySearchBox.focus();
+        }
+      });
+    });
 
     // Toast helper
     function showToast(message, type) {
@@ -927,6 +1170,23 @@ export class MarketplacePanel {
 
     retryBtn.addEventListener('click', function() {
       vscode.postMessage({ command: 'refresh' });
+    });
+
+    // ---- Registry search ----
+    var registrySearchTimer;
+    registrySearchBox.addEventListener('input', function() {
+      clearTimeout(registrySearchTimer);
+      var query = registrySearchBox.value.trim();
+      if (query.length < 2) {
+        registryInitial.style.display = 'block';
+        registrySearching.style.display = 'none';
+        registryNoResults.style.display = 'none';
+        registryResultsList.style.display = 'none';
+        return;
+      }
+      registrySearchTimer = setTimeout(function() {
+        vscode.postMessage({ command: 'searchRegistry', query: query });
+      }, 300);
     });
 
     // Tell extension we're ready
@@ -1025,6 +1285,50 @@ export class MarketplacePanel {
           break;
         case 'filterSource':
           applySourceFilter(msg.sourceId);
+          break;
+        case 'registrySearching':
+          registryInitial.style.display = 'none';
+          registrySearching.style.display = 'block';
+          registryNoResults.style.display = 'none';
+          registryResultsList.style.display = 'none';
+          break;
+        case 'registryResults':
+          registryInitial.style.display = 'none';
+          registrySearching.style.display = 'none';
+          if (msg.skills.length === 0) {
+            registryNoResults.style.display = 'block';
+            registryResultsList.style.display = 'none';
+          } else {
+            registryNoResults.style.display = 'none';
+            registryResultsList.style.display = 'block';
+            renderRegistryResults(msg.skills);
+          }
+          break;
+        case 'registryInstalling':
+          var installingBtns = registryResultsList.querySelectorAll('[data-skill-id="' + msg.skillId + '"]');
+          installingBtns.forEach(function(b) {
+            b.classList.add('loading');
+            b.textContent = '\u23F3';
+            b.disabled = true;
+          });
+          break;
+        case 'registryInstalled':
+          registryInstalledSet.add(msg.skillId);
+          var doneBtns = registryResultsList.querySelectorAll('[data-skill-id="' + msg.skillId + '"]');
+          doneBtns.forEach(function(b) {
+            b.classList.remove('loading');
+            b.classList.add('installed');
+            b.textContent = '\u2713 ' + loc.installedLabel;
+            b.disabled = true;
+          });
+          break;
+        case 'registryInstallFailed':
+          var failBtns = registryResultsList.querySelectorAll('[data-skill-id="' + msg.skillId + '"]');
+          failBtns.forEach(function(b) {
+            b.classList.remove('loading');
+            b.textContent = loc.registryInstallToLibrary;
+            b.disabled = false;
+          });
           break;
       }
     });
@@ -1142,7 +1446,7 @@ export class MarketplacePanel {
         ].filter(Boolean).join(' \u00B7 ');
 
         var filesBadge = skill.additionalFilesCount > 0
-          ? '<span class="files-badge">\u{1F4CE} ' + skill.additionalFilesCount + ' file(s)</span>'
+          ? '<span class="files-badge">' + svgClip + ' ' + skill.additionalFilesCount + ' file(s)</span>'
           : '';
 
         var btnClass = isInstalled ? 'install-btn installed' : 'install-btn';
@@ -1163,7 +1467,7 @@ export class MarketplacePanel {
             '<div class="skill-name">' + escapeHtml(skill.name) + '</div>' +
             '<div class="skill-desc">' + escapeHtml(skill.description) + '</div>' +
             '<div class="skill-meta">' +
-              '<span class="source-tag"><span class="repo-icon">\u{1F4E6}</span> ' + escapeHtml(skill.sourceLabel) + '</span>' +
+              '<span class="source-tag"><span class="repo-icon">' + svgPackage + '</span> ' + escapeHtml(skill.sourceLabel) + '</span>' +
               (meta ? '<span style="font-size:0.8em;opacity:0.7">' + meta + '</span>' : '') +
               filesBadge +
               tags +
@@ -1217,10 +1521,52 @@ export class MarketplacePanel {
 
     }
 
+    function renderRegistryResults(skills) {
+      registryResultsList.innerHTML = skills.map(function(skill) {
+        var isInstalled = registryInstalledSet.has(skill.skillId);
+        var btnClass = isInstalled ? 'registry-install-btn installed' : 'registry-install-btn';
+        var btnText = isInstalled ? '\u2713 ' + escapeHtml(loc.installedLabel) : escapeHtml(loc.registryInstallToLibrary);
+        return '<li class="registry-skill-item">' +
+          '<div class="registry-skill-icon">\u2726</div>' +
+          '<div class="registry-skill-info">' +
+            '<div class="registry-skill-name">' + escapeHtml(skill.name) + '</div>' +
+            '<div class="registry-skill-source">' +
+              '<span>' + svgPackage + '</span> ' + escapeHtml(skill.source) +
+              (skill.installsLabel ? ' <span class="registry-installs-badge">' + svgChart + ' ' + escapeHtml(skill.installsLabel) + '</span>' : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="registry-skill-actions">' +
+            '<button class="' + btnClass + '"' +
+              ' data-skill-id="' + escapeHtml(skill.skillId) + '"' +
+              ' data-entry=\\''+escapeHtml(JSON.stringify(skill))+'\\'' +
+              (isInstalled ? ' disabled' : '') +
+            '>' + btnText + '</button>' +
+          '</div>' +
+        '</li>';
+      }).join('');
+
+      registryResultsList.querySelectorAll('.registry-install-btn:not(.installed)').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          try {
+            var entry = JSON.parse(btn.getAttribute('data-entry'));
+            vscode.postMessage({
+              command: 'installFromRegistry',
+              entry: { id: entry.id, skillId: entry.skillId, name: entry.name, installs: entry.installs, source: entry.source },
+            });
+          } catch(err) {
+            console.error('Failed to parse entry', err);
+          }
+        });
+      });
+    }
+
     function showDetail(skill) {
       currentPreviewSkill = skill;
 
       // Hide list, show detail
+      document.querySelector('.tab-bar').style.display = 'none';
+      document.querySelectorAll('.tab-panel').forEach(function(p) { p.style.display = 'none'; });
       document.querySelector('.header').style.display = 'none';
       document.querySelector('.source-filters').style.display = 'none';
       sourceBar.style.display = 'none';
@@ -1236,16 +1582,16 @@ export class MarketplacePanel {
       // Meta bar
       var metaParts = [];
       if (skill.sourceLabel) {
-        metaParts.push('<span class="detail-meta-item"><span class="repo-icon">\u{1F4E6}</span> <strong>' + escapeHtml(skill.sourceLabel) + '</strong></span>');
+        metaParts.push('<span class="detail-meta-item"><span class="repo-icon">' + svgPackage + '</span> <strong>' + escapeHtml(skill.sourceLabel) + '</strong></span>');
       }
       if (skill.author) {
-        metaParts.push('<span class="detail-meta-item">\u{1F464} ' + escapeHtml(skill.author) + '</span>');
+        metaParts.push('<span class="detail-meta-item">' + svgUser + ' ' + escapeHtml(skill.author) + '</span>');
       }
       if (skill.version) {
         metaParts.push('<span class="detail-meta-item">v' + escapeHtml(skill.version) + '</span>');
       }
       if (skill.license) {
-        metaParts.push('<span class="detail-meta-item">\u{1F4DC} ' + escapeHtml(skill.license) + '</span>');
+        metaParts.push('<span class="detail-meta-item">' + svgLicense + ' ' + escapeHtml(skill.license) + '</span>');
       }
       if (skill.tags && skill.tags.length > 0) {
         metaParts.push('<span class="detail-tags">' +
@@ -1262,12 +1608,12 @@ export class MarketplacePanel {
       if (hasFiles) {
         fileExplorer.classList.remove('hidden');
         var treeHtml = '<li class="file-tree-item active" data-tab="skill-md">' +
-          '<span class="file-tree-icon">\u{1F4C4}</span><span class="file-tree-name">SKILL.md</span></li>';
+          '<span class="file-tree-icon">' + svgFileDoc + '</span><span class="file-tree-name">SKILL.md</span></li>';
         treeHtml += skill.additionalFiles.map(function(f) {
-          var icon = '\u{1F4C4}';
-          if (f.match(/\\.(sh|bash|py|js|ts)$/)) icon = '\u{2699}';
-          if (f.match(/^scripts\\//)) icon = '\u{2699}';
-          if (f.match(/\\.md$/i)) icon = '\u{1F4DD}';
+          var icon = svgFileDoc;
+          if (f.match(/\\.(sh|bash|py|js|ts)$/)) icon = svgGear;
+          if (f.match(/^scripts\\//)) icon = svgGear;
+          if (f.match(/\\.md$/i)) icon = svgEdit;
           return '<li class="file-tree-item" data-tab="file" data-file-path="' + escapeHtml(f) + '">' +
             '<span class="file-tree-icon">' + icon + '</span><span class="file-tree-name">' + escapeHtml(f) + '</span></li>';
         }).join('');
@@ -1360,6 +1706,11 @@ export class MarketplacePanel {
       listView.classList.remove('hidden');
       fileExplorer.classList.add('hidden');
       fileTree.innerHTML = '';
+      // Restore tab bar and active tab panel
+      document.querySelector('.tab-bar').style.display = '';
+      document.querySelectorAll('.tab-panel').forEach(function(p) {
+        p.style.display = '';
+      });
       document.querySelector('.header').style.display = '';
       document.querySelector('.source-filters').style.display = '';
       // sourceBar visibility handled by renderSourceBar

@@ -196,6 +196,11 @@ describe('MarketplacePanel', () => {
     vi.clearAllMocks();
   });
 
+  const mockRegistryService = {
+    search: vi.fn().mockResolvedValue({ query: '', skills: [], count: 0 }),
+    installFromRegistry: vi.fn().mockResolvedValue(undefined),
+  } as any;
+
   it('should create a panel via createOrShow', () => {
     const mockMarketplaceService = {
       getSources: vi.fn(() => []),
@@ -206,6 +211,7 @@ describe('MarketplacePanel', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       vi.fn(),
     );
 
@@ -228,6 +234,7 @@ describe('MarketplacePanel', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       vi.fn(),
     );
 
@@ -236,6 +243,7 @@ describe('MarketplacePanel', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       vi.fn(),
     );
 
@@ -253,12 +261,14 @@ describe('MarketplacePanel', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       vi.fn(),
     );
 
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       vi.fn(),
       'anthropics/skills',
     );
@@ -299,6 +309,7 @@ describe('MarketplacePanel', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       onRefresh,
     );
 
@@ -342,6 +353,7 @@ describe('MarketplacePanel', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       onRefresh,
     );
 
@@ -385,6 +397,7 @@ describe('MarketplacePanel', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       onRefresh,
     );
 
@@ -403,6 +416,11 @@ describe('MarketplacePanel message handlers', () => {
     MarketplacePanel.currentPanel = undefined;
     vi.clearAllMocks();
   });
+
+  const mockRegistryService = {
+    search: vi.fn().mockResolvedValue({ query: '', skills: [], count: 0 }),
+    installFromRegistry: vi.fn().mockResolvedValue(undefined),
+  } as any;
 
   function setupPanel(serviceOverrides: Record<string, any> = {}) {
     const mock = createMockWebviewPanel();
@@ -425,6 +443,7 @@ describe('MarketplacePanel message handlers', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       onRefresh,
     );
 
@@ -808,6 +827,11 @@ describe('MarketplacePanel HTML output', () => {
     vi.clearAllMocks();
   });
 
+  const mockRegistryService = {
+    search: vi.fn().mockResolvedValue({ query: '', skills: [], count: 0 }),
+    installFromRegistry: vi.fn().mockResolvedValue(undefined),
+  } as any;
+
   it('should generate HTML with CSP nonce', () => {
     const mock = createMockWebviewPanel();
     vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
@@ -821,6 +845,7 @@ describe('MarketplacePanel HTML output', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       vi.fn(),
     );
 
@@ -838,6 +863,11 @@ describe('MarketplacePanel dispose', () => {
     vi.clearAllMocks();
   });
 
+  const mockRegistryService = {
+    search: vi.fn().mockResolvedValue({ query: '', skills: [], count: 0 }),
+    installFromRegistry: vi.fn().mockResolvedValue(undefined),
+  } as any;
+
   it('should clean up on dispose', () => {
     const mock = createMockWebviewPanel();
     vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
@@ -851,6 +881,7 @@ describe('MarketplacePanel dispose', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       vi.fn(),
     );
 
@@ -876,6 +907,7 @@ describe('MarketplacePanel dispose', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       vi.fn(),
     );
 
@@ -895,6 +927,11 @@ describe('MarketplacePanel filterSourceId on existing panel', () => {
     vi.clearAllMocks();
   });
 
+  const mockRegistryService = {
+    search: vi.fn().mockResolvedValue({ query: '', skills: [], count: 0 }),
+    installFromRegistry: vi.fn().mockResolvedValue(undefined),
+  } as any;
+
   it('should apply pending filter on first createOrShow with filterSourceId', () => {
     const mock = createMockWebviewPanel();
     vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
@@ -908,6 +945,7 @@ describe('MarketplacePanel filterSourceId on existing panel', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       vi.fn(),
       'anthropic',
     );
@@ -924,6 +962,11 @@ describe('MarketplacePanel update handler', () => {
     MarketplacePanel.currentPanel = undefined;
     vi.clearAllMocks();
   });
+
+  const mockRegistryService = {
+    search: vi.fn().mockResolvedValue({ query: '', skills: [], count: 0 }),
+    installFromRegistry: vi.fn().mockResolvedValue(undefined),
+  } as any;
 
   function setupPanel(serviceOverrides: Record<string, any> = {}) {
     const mock = createMockWebviewPanel();
@@ -945,6 +988,7 @@ describe('MarketplacePanel update handler', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       onRefresh,
     );
 
@@ -1079,6 +1123,7 @@ describe('MarketplacePanel update handler', () => {
     MarketplacePanel.createOrShow(
       { path: '/mock/ext', fsPath: '/mock/ext' } as any,
       mockMarketplaceService,
+      mockRegistryService,
       vi.fn(),
       'anthropic',
     );
