@@ -261,9 +261,9 @@ export const TARGET_FORMATS: Record<TargetFormat, TargetFormatConfig> = {
   },
   'gemini-cli': {
     id: 'gemini-cli',
-    label: 'Gemini CLI (.agents/skills)',
+    label: 'Gemini CLI (.gemini/skills)',
     description: 'Gemini CLI skill format',
-    skillsDir: '.agents/skills',
+    skillsDir: '.gemini/skills',
     usesSkillMd: true,
   },
   amp: {
