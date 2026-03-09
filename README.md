@@ -75,7 +75,7 @@ Import skills from your library into the current workspace. Choose the target fo
 | Augment | `.augment/skills/` | Augment |
 | OpenCode | `.agents/skills/` | OpenCode |
 | Goose | `.goose/skills/` | Goose |
-| Gemini CLI | `.agents/skills/` | Gemini CLI |
+| Gemini CLI | `.gemini/skills/` | Gemini CLI |
 | Amp | `.agents/skills/` | Amp |
 | Kilo Code | `.kilocode/skills/` | Kilo Code |
 | Junie | `.junie/skills/` | Junie |

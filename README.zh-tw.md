@@ -75,7 +75,7 @@ Skills 儲存在本地電腦上（預設為 `~/.skilldock/skills/`）。
 | Augment | `.augment/skills/` | Augment |
 | OpenCode | `.agents/skills/` | OpenCode |
 | Goose | `.goose/skills/` | Goose |
-| Gemini CLI | `.agents/skills/` | Gemini CLI |
+| Gemini CLI | `.gemini/skills/` | Gemini CLI |
 | Amp | `.agents/skills/` | Amp |
 | Kilo Code | `.kilocode/skills/` | Kilo Code |
 | Junie | `.junie/skills/` | Junie |

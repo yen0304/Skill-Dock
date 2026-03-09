@@ -75,7 +75,7 @@ Skills 存储在本地计算机上（默认为 `~/.skilldock/skills/`）。
 | Augment | `.augment/skills/` | Augment |
 | OpenCode | `.agents/skills/` | OpenCode |
 | Goose | `.goose/skills/` | Goose |
-| Gemini CLI | `.agents/skills/` | Gemini CLI |
+| Gemini CLI | `.gemini/skills/` | Gemini CLI |
 | Amp | `.agents/skills/` | Amp |
 | Kilo Code | `.kilocode/skills/` | Kilo Code |
 | Junie | `.junie/skills/` | Junie |
