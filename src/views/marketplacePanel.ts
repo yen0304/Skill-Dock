@@ -346,7 +346,8 @@ export class MarketplacePanel {
       const file = skill.additionalFiles.find((f) => f.relativePath === filePath);
       if (!file) { return; }
 
-      const content = await this.marketplaceService.fetchFileContent(file.downloadUrl);
+      const content = file.content
+        ?? await this.marketplaceService.fetchFileContent(file.downloadUrl ?? '');
 
       const isMarkdown = /\.md$/i.test(filePath);
       this._postMessage({

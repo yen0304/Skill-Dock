@@ -79,12 +79,6 @@ export class SkillsRegistryService {
 
   /**
    * Install a skill discovered via skills.sh into the user's global library.
-   *
-   * Flow:
-   *  1. Parse the `source` field to build a temporary MarketplaceSource
-   *  2. Fetch skills from that source (uses tarball download, cached)
-   *  3. Match the specific skill by its directory name
-   *  4. Install via MarketplaceService
    */
   async installFromRegistry(entry: RegistrySkillEntry): Promise<void> {
     const source = this._parseSource(entry.source);
@@ -94,16 +88,16 @@ export class SkillsRegistryService {
       );
     }
 
-    // Fetch skills from the source repo
     const remoteSkills = await this.marketplaceService.fetchSource(source, false);
 
-    // Find the matching skill by directory name
     const match = remoteSkills.find((s) => {
-      // Match by the directory portion of the repoPath
       const parts = s.repoPath.split('/');
       const dirName = parts.length >= 2 ? parts[parts.length - 2] : '';
-      return dirName === entry.skillId || s.id.endsWith(`--${entry.skillId}`);
-    });
+      const nameSlug = s.metadata.name.toLowerCase().replace(/\s+/g, '-');
+      return dirName === entry.skillId
+        || s.id.endsWith(`--${entry.skillId}`)
+        || nameSlug === entry.skillId;
+    }) ?? (remoteSkills.length === 1 ? remoteSkills[0] : undefined);
 
     if (!match) {
       throw new Error(
@@ -131,8 +125,11 @@ export class SkillsRegistryService {
     return remoteSkills.find((s) => {
       const parts = s.repoPath.split('/');
       const dirName = parts.length >= 2 ? parts[parts.length - 2] : '';
-      return dirName === entry.skillId || s.id.endsWith(`--${entry.skillId}`);
-    }) ?? null;
+      const nameSlug = s.metadata.name.toLowerCase().replace(/\s+/g, '-');
+      return dirName === entry.skillId
+        || s.id.endsWith(`--${entry.skillId}`)
+        || nameSlug === entry.skillId;
+    }) ?? (remoteSkills.length === 1 ? remoteSkills[0] : null);
   }
 
   /**
@@ -158,7 +155,6 @@ export class SkillsRegistryService {
    * into a MarketplaceSource for the existing marketplace fetch pipeline.
    */
   private _parseSource(source: string): MarketplaceSource | null {
-    // The source from skills.sh is in "owner/repo" format
     const match = source.match(/^([^/]+)\/([^/]+)$/);
     if (!match) {
       return MarketplaceService.parseGitHubUrl(source);
@@ -169,7 +165,7 @@ export class SkillsRegistryService {
       id: `${owner}/${repo}`,
       owner: owner!,
       repo: repo!,
-      branch: 'main',
+      branch: '',
       path: '',
       label: `${owner}/${repo}`,
       isBuiltin: false,

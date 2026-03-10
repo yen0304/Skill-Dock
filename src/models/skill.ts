@@ -83,7 +83,7 @@ export interface MarketplaceSource {
   owner: string;
   /** GitHub repo name */
   repo: string;
-  /** Branch (defaults to "main") */
+  /** Branch (empty string = auto-resolve default branch) */
   branch: string;
   /** Sub-path inside the repo to scan (empty = root) */
   path: string;
@@ -99,8 +99,10 @@ export interface MarketplaceSource {
 export interface RemoteAdditionalFile {
   /** Relative path from the skill directory, e.g. "reference.md" or "scripts/helper.sh" */
   relativePath: string;
-  /** Raw download URL for the file */
-  downloadUrl: string;
+  /** Raw download URL for the file (used as fallback when content is not available) */
+  downloadUrl?: string;
+  /** File content read directly from the cloned repo (preferred over downloadUrl) */
+  content?: string;
 }
 
 /**
@@ -155,12 +157,12 @@ export const BUILTIN_MARKETPLACE_SOURCES: MarketplaceSource[] = [
     isBuiltin: true,
   },
   {
-    id: 'vercel-labs/skills',
-    owner: 'vercel-labs',
+    id: 'huggingface/skills',
+    owner: 'huggingface',
     repo: 'skills',
-    branch: 'main',
-    path: 'skills',
-    label: 'Vercel Skills (skills.sh)',
+    branch: '',
+    path: '',
+    label: 'Hugging Face Skills',
     isBuiltin: true,
   },
   {

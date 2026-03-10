@@ -5,6 +5,17 @@ All notable changes to the Skill Dock extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-03-10
+
+### Fixed
+
+- **Cannot install single-skill repos from skills.sh** ([#2](https://github.com/yen0304/Skill-Dock/issues/2)): Skills from repos that place `SKILL.md` at the repository root (e.g. `imxv/pretty-mermaid-skills`) failed with _"Skill not found"_ because the matching logic only compared directory names. Now also matches by metadata name slug and falls back to the single skill when a repo contains exactly one.
+- **Default branch resolution**: Replaced the `codeload.github.com` tarball approach with `git clone --depth 1`, matching the skills CLI implementation. Git auto-resolves the default branch — no more hardcoded branch names or domain-specific API endpoints.
+
+### Changed
+
+- Removed outdated comments referencing the old tarball/archive approach and trimmed verbose inline comments across service files.
+
 ## [0.8.1] - 2026-03-09
 
 ### Fixed

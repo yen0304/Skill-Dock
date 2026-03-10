@@ -1,6 +1,10 @@
 import * as vscode from 'vscode';
 import * as https from 'https';
-import * as zlib from 'zlib';
+import { execFile } from 'child_process';
+import { readdir, readFile as fsReadFile, mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join, normalize, resolve, sep } from 'path';
+import { promisify } from 'util';
 import {
   MarketplaceSource,
   RemoteAdditionalFile,
@@ -9,6 +13,8 @@ import {
 } from '../models/skill';
 import { parseFrontmatter } from '../utils/skillParser';
 import { StorageService } from './storageService';
+
+const execFileAsync = promisify(execFile);
 
 /** Cache entry with TTL */
 interface CacheEntry<T> {
@@ -107,15 +113,7 @@ export class MarketplaceService {
     return skills;
   }
 
-  /**
-   * Fetch skills from a single source.
-   *
-   * Downloads the entire repository as a tar.gz archive in a single HTTP
-   * request, then parses all SKILL.md files from the in-memory archive.
-   * This is dramatically faster than fetching each file individually.
-   */
   async fetchSource(source: MarketplaceSource, force = false): Promise<RemoteSkill[]> {
-    // Check cache
     if (!force) {
       const cached = this._cache.get(source.id);
       if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
@@ -124,11 +122,8 @@ export class MarketplaceService {
     }
 
     const token = await this._resolveToken();
+    const repoFiles = await this._cloneAndReadFiles(source, token);
 
-    // Download the entire repo as a tarball (single HTTP request)
-    const repoFiles = await this._fetchArchive(source, token);
-
-    // Find SKILL.md files, respecting the source path prefix
     const prefix = source.path ? source.path.replace(/\/+$/, '') + '/' : '';
     const allPaths = [...repoFiles.keys()];
     const skillMdPaths = allPaths.filter((p) => {
@@ -137,7 +132,6 @@ export class MarketplaceService {
       return isSkillMd && (!prefix || p.startsWith(prefix));
     });
 
-    // Parse each SKILL.md from the in-memory archive (no additional HTTP calls)
     const skills: RemoteSkill[] = [];
     for (const mdPath of skillMdPaths) {
       const content = repoFiles.get(mdPath);
@@ -159,18 +153,17 @@ export class MarketplaceService {
       const dirName = parts.length >= 2 ? parts[parts.length - 2] : source.repo;
       const skillId = MarketplaceService.makeSkillId(source, dirName);
 
-      // Collect sibling files in the same skill directory
       const skillDir = mdPath.substring(0, mdPath.lastIndexOf('/'));
       const additionalFiles: RemoteAdditionalFile[] = skillDir
         ? allPaths
             .filter((p) => p !== mdPath && p.startsWith(skillDir + '/'))
             .map((p) => ({
               relativePath: p.substring(skillDir.length + 1),
-              downloadUrl: `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.branch}/${p}`,
+              content: repoFiles.get(p),
             }))
         : [];
 
-      const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.branch}/${mdPath}`;
+      const rawUrl = `https://github.com/${source.owner}/${source.repo}`;
       skills.push({
         source,
         id: skillId,
@@ -229,12 +222,13 @@ export class MarketplaceService {
     await this.storageService.recordInstall(remote.id, remote.metadata.version);
   }
 
-  /** Download and write all additional files bundled with a remote skill. */
+  /** Write all additional files bundled with a remote skill. */
   private async _saveAdditionalFiles(remote: RemoteSkill, token?: string): Promise<void> {
     if (!remote.additionalFiles?.length) { return; }
     await Promise.all(
       remote.additionalFiles.map(async (file) => {
-        const content = await this._httpGetText(file.downloadUrl, token);
+        const content = file.content
+          ?? (file.downloadUrl ? await this._httpGetText(file.downloadUrl, token) : '');
         await this.storageService.writeSkillFile(remote.id, file.relativePath, content);
       })
     );
@@ -261,80 +255,81 @@ export class MarketplaceService {
       const t = await this.getToken();
       if (t?.trim()) { return t.trim(); }
     }
-    // Migration fallback: read from config if SecretStorage callback not provided or returned empty
+    // Fall back to legacy config
     const config = vscode.workspace.getConfiguration('skilldock');
     const legacy = config.get<string>('githubToken');
     return legacy?.trim() || undefined;
   }
 
   // ------------------------------------------------------------------
-  // Archive-based fetching (single HTTP request per source)
+  // Git clone-based fetching
   // ------------------------------------------------------------------
 
-  /** Download the repo as a tar.gz archive and extract file contents. */
-  private async _fetchArchive(source: MarketplaceSource, token?: string): Promise<Map<string, string>> {
-    const url = `https://codeload.github.com/${source.owner}/${source.repo}/tar.gz/refs/heads/${source.branch}`;
-    const compressed = await this._httpGetBuffer(url, token);
-    const decompressed = zlib.gunzipSync(compressed);
-    const files = MarketplaceService.parseTar(decompressed);
-    return files;
-  }
+  /** Clone timeout in ms. */
+  private static readonly CLONE_TIMEOUT_MS = 60_000;
+
+  /** Directories to skip when reading a cloned repo. */
+  private static readonly SKIP_DIRS = new Set(['.git', 'node_modules', '.DS_Store']);
 
   /**
-   * Parse a tar buffer and return a map of relative-path → UTF-8 content.
-   * Strips the root directory that GitHub adds to archive entries.
+   * Clone the repo with `git clone --depth 1` and read all files.
    */
-  static parseTar(buffer: Buffer): Map<string, string> {
+  private async _cloneAndReadFiles(source: MarketplaceSource, token?: string): Promise<Map<string, string>> {
+    const url = `https://github.com/${source.owner}/${source.repo}.git`;
+    const tmpDir = await mkdtemp(join(tmpdir(), 'skilldock-'));
+    try {
+      const args = ['clone', '--depth', '1'];
+      if (token) {
+        args.push('-c', `http.extraHeader=Authorization: token ${token}`);
+      }
+      if (source.branch) {
+        args.push('--branch', source.branch);
+      }
+      args.push('--', url, tmpDir);
+
+      await execFileAsync('git', args, {
+        timeout: MarketplaceService.CLONE_TIMEOUT_MS,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      });
+
+      return await MarketplaceService._readDirRecursive(tmpDir);
+    } finally {
+      await MarketplaceService._cleanupTmpDir(tmpDir);
+    }
+  }
+
+  /** Recursively read all files from a directory into a Map<relativePath, content>. */
+  static async _readDirRecursive(baseDir: string, current = ''): Promise<Map<string, string>> {
     const files = new Map<string, string>();
-    let offset = 0;
-    let pendingPath: string | null = null;
+    const dir = current ? join(baseDir, current) : baseDir;
+    const entries = await readdir(dir, { withFileTypes: true });
 
-    while (offset + 512 <= buffer.length) {
-      const header = buffer.subarray(offset, offset + 512);
-      if (header[0] === 0) { break; } // end-of-archive
+    for (const entry of entries) {
+      if (MarketplaceService.SKIP_DIRS.has(entry.name)) { continue; }
+      const relPath = current ? `${current}/${entry.name}` : entry.name;
 
-      // Name (bytes 0–99) + optional UStar prefix (bytes 345–499)
-      let name = header.subarray(0, 100).toString('utf-8').replace(/\0+$/, '');
-      const ustarPrefix = header.subarray(345, 500).toString('utf-8').replace(/\0+$/, '');
-      if (ustarPrefix) { name = ustarPrefix + '/' + name; }
-
-      // Size in octal (bytes 124–135)
-      const size = parseInt(
-        header.subarray(124, 136).toString('utf-8').replace(/\0+$/, '').trim(),
-        8,
-      ) || 0;
-
-      // Type flag (byte 156)
-      const type = String.fromCharCode(header[156]);
-
-      offset += 512; // advance past header
-
-      if (type === 'L') {
-        // GNU long-name extension
-        pendingPath = buffer.subarray(offset, offset + size).toString('utf-8').replace(/\0+$/, '');
-      } else if (type === 'x' || type === 'g') {
-        // pax extended header — look for path=
-        const pax = buffer.subarray(offset, offset + size).toString('utf-8');
-        const m = pax.match(/\d+ path=(.+)\n/);
-        if (m) { pendingPath = m[1]; }
-      } else {
-        const finalName = pendingPath || name;
-        pendingPath = null;
-        if ((type === '0' || type === '' || type === '\0') && size > 0) {
-          // Regular file — strip the root directory GitHub adds (e.g. "repo-sha/")
-          const slash = finalName.indexOf('/');
-          const rel = slash >= 0 ? finalName.substring(slash + 1) : finalName;
-          if (rel) {
-            files.set(rel, buffer.subarray(offset, offset + size).toString('utf-8'));
-          }
+      if (entry.isDirectory()) {
+        const sub = await MarketplaceService._readDirRecursive(baseDir, relPath);
+        for (const [k, v] of sub) { files.set(k, v); }
+      } else if (entry.isFile()) {
+        try {
+          const content = await fsReadFile(join(baseDir, relPath), 'utf-8');
+          files.set(relPath, content);
+        } catch {
+          // Skip binary files
         }
       }
-
-      // Data blocks are aligned to 512-byte boundaries
-      offset += Math.ceil(size / 512) * 512;
     }
 
     return files;
+  }
+
+  /** Safely remove a temp directory (only if it's actually under os.tmpdir()). */
+  private static async _cleanupTmpDir(dir: string): Promise<void> {
+    const normalizedDir = normalize(resolve(dir));
+    const normalizedTmp = normalize(resolve(tmpdir()));
+    if (!normalizedDir.startsWith(normalizedTmp + sep)) { return; }
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 
   // ------------------------------------------------------------------
@@ -363,33 +358,6 @@ export class MarketplaceService {
 
   /** HTTP request timeout in ms */
   private static readonly HTTP_TIMEOUT_MS = 15_000;
-
-  /** Longer timeout for archive downloads (full repo tarball) */
-  private static readonly ARCHIVE_TIMEOUT_MS = 30_000;
-
-  /** Perform an HTTPS GET and return a raw Buffer (used for archive downloads). */
-  private _httpGetBuffer(url: string, token?: string): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const req = https.get(url, { headers: this._getHeaders(undefined, token), timeout: MarketplaceService.ARCHIVE_TIMEOUT_MS }, (res) => {
-        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          this._httpGetBuffer(res.headers.location, token).then(resolve, reject);
-          return;
-        }
-        if (res.statusCode && res.statusCode >= 400) {
-          reject(this._httpError(res.statusCode!, url, res.headers['x-ratelimit-remaining']));
-          res.resume();
-          return;
-        }
-        const chunks: Buffer[] = [];
-        res.on('data', (c: Buffer) => chunks.push(c));
-        res.on('end', () => resolve(Buffer.concat(chunks)));
-        res.on('error', reject);
-      });
-      req.on('timeout', () => { req.destroy(); reject(new Error(`Request timed out: ${url}`)); });
-      req.on('error', reject);
-      req.end();
-    });
-  }
 
   /** Perform an HTTPS GET and return text. */
   private _httpGetText(url: string, token?: string): Promise<string> {
@@ -443,7 +411,7 @@ export class MarketplaceService {
   static parseGitHubUrl(input: string): MarketplaceSource | null {
     let owner: string;
     let repo: string;
-    let branch = 'main';
+    let branch = '';
     let subpath = '';
 
     const trimmed = input.trim().replace(/\/+$/, '');
@@ -456,7 +424,7 @@ export class MarketplaceService {
     if (urlMatch) {
       owner = urlMatch[1];
       repo = urlMatch[2];
-      branch = urlMatch[3] || 'main';
+      branch = urlMatch[3] || '';
       subpath = urlMatch[4] || '';
     } else {
       // Short form: owner/repo

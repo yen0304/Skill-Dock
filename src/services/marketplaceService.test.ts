@@ -2,49 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import * as zlib from 'zlib';
 import { EventEmitter } from 'events';
 
 /**
- * Build a minimal tar.gz buffer from a map of {path: content}.
- * Mimics the GitHub codeload archive format where all entries are
- * nested under a root directory (e.g. "repo-main/").
+ * Build a Map<string, string> from a plain object — used to mock
+ * the result of _cloneAndReadFiles (replaces the old buildTarGz).
  */
-function buildTarGz(files: Record<string, string>, rootPrefix = 'repo-main'): Buffer {
-  const blocks: Buffer[] = [];
-
-  for (const [filePath, content] of Object.entries(files)) {
-    const fullPath = `${rootPrefix}/${filePath}`;
-    const contentBuf = Buffer.from(content, 'utf-8');
-
-    // 512-byte tar header
-    const header = Buffer.alloc(512);
-    header.write(fullPath.substring(0, 100), 0, 'utf-8');       // name
-    header.write('0000644\0', 100, 'utf-8');                     // mode
-    header.write('0000000\0', 108, 'utf-8');                     // uid
-    header.write('0000000\0', 116, 'utf-8');                     // gid
-    header.write(contentBuf.length.toString(8).padStart(11, '0') + '\0', 124, 'utf-8'); // size
-    header.write('00000000000\0', 136, 'utf-8');                 // mtime
-    header.fill(0x20, 148, 156);                                 // checksum placeholder
-    header[156] = 0x30;                                          // type '0' = regular file
-
-    // Calculate and write checksum
-    let checksum = 0;
-    for (let i = 0; i < 512; i++) { checksum += header[i]; }
-    header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148, 'utf-8');
-
-    blocks.push(header);
-
-    // Content padded to 512-byte boundary
-    const padded = Buffer.alloc(Math.ceil(contentBuf.length / 512) * 512);
-    contentBuf.copy(padded);
-    blocks.push(padded);
-  }
-
-  // End-of-archive marker: two 512-byte zero blocks
-  blocks.push(Buffer.alloc(1024));
-
-  return zlib.gzipSync(Buffer.concat(blocks));
+function buildFileMap(files: Record<string, string>): Map<string, string> {
+  return new Map(Object.entries(files));
 }
 
 let mockLibraryPath = '';
@@ -133,7 +98,7 @@ describe('MarketplaceService', () => {
       expect(result).not.toBeNull();
       expect(result!.owner).toBe('anthropics');
       expect(result!.repo).toBe('skills');
-      expect(result!.branch).toBe('main');
+      expect(result!.branch).toBe('');
       expect(result!.path).toBe('');
       expect(result!.id).toBe('anthropics/skills');
     });
@@ -164,7 +129,7 @@ describe('MarketplaceService', () => {
       expect(result).not.toBeNull();
       expect(result!.owner).toBe('myorg');
       expect(result!.repo).toBe('myrepo');
-      expect(result!.branch).toBe('main');
+      expect(result!.branch).toBe('');
     });
 
     it('should return null for invalid URL', () => {
@@ -700,30 +665,12 @@ describe('MarketplaceService', () => {
   // Token resolution (getToken callback)
   // ----------------------------------------------------------
   describe('getToken callback', () => {
-    afterEach(() => {
-      vi.mocked(https.get as any).mockReset();
-    });
-
-    it('should use the token from getToken callback in request headers', async () => {
+    it('should pass token to _cloneAndReadFiles', async () => {
       const mockGetToken = vi.fn().mockResolvedValue('secret-token-abc');
       const serviceWithToken = new MarketplaceService(storageService, mockGetToken);
 
-      let capturedHeaders: Record<string, string> = {};
-      vi.mocked(https.get as any).mockImplementation(
-        (_url: string, opts: { headers: Record<string, string> }, cb: (res: any) => void) => {
-          capturedHeaders = opts.headers;
-          const res = Object.assign(new EventEmitter(), {
-            statusCode: 200, headers: {}, resume: vi.fn(),
-          });
-          const req = Object.assign(new EventEmitter(), { end: vi.fn() });
-          process.nextTick(() => {
-            cb(res);
-            res.emit('data', buildTarGz({}));
-            res.emit('end');
-          });
-          return req;
-        }
-      );
+      const spy = vi.spyOn(serviceWithToken as any, '_cloneAndReadFiles')
+        .mockResolvedValue(buildFileMap({}));
 
       const testSource: MarketplaceSource = {
         id: 'tok/test', owner: 'tok', repo: 'test', branch: 'main', path: '', label: 'Tok', isBuiltin: false,
@@ -732,29 +679,15 @@ describe('MarketplaceService', () => {
       await serviceWithToken.fetchSource(testSource);
 
       expect(mockGetToken).toHaveBeenCalled();
-      expect(capturedHeaders['Authorization']).toBe('token secret-token-abc');
+      expect(spy).toHaveBeenCalledWith(testSource, 'secret-token-abc');
     });
 
-    it('should send no Authorization header when getToken returns undefined', async () => {
+    it('should pass undefined token when getToken returns undefined', async () => {
       const mockGetToken = vi.fn().mockResolvedValue(undefined);
       const serviceNoToken = new MarketplaceService(storageService, mockGetToken);
 
-      let capturedHeaders: Record<string, string> = {};
-      vi.mocked(https.get as any).mockImplementation(
-        (_url: string, opts: { headers: Record<string, string> }, cb: (res: any) => void) => {
-          capturedHeaders = opts.headers;
-          const res = Object.assign(new EventEmitter(), {
-            statusCode: 200, headers: {}, resume: vi.fn(),
-          });
-          const req = Object.assign(new EventEmitter(), { end: vi.fn() });
-          process.nextTick(() => {
-            cb(res);
-            res.emit('data', buildTarGz({}));
-            res.emit('end');
-          });
-          return req;
-        }
-      );
+      const spy = vi.spyOn(serviceNoToken as any, '_cloneAndReadFiles')
+        .mockResolvedValue(buildFileMap({}));
 
       const testSource: MarketplaceSource = {
         id: 'no/tok', owner: 'no', repo: 'tok', branch: 'main', path: '', label: 'No', isBuiltin: false,
@@ -762,7 +695,7 @@ describe('MarketplaceService', () => {
 
       await serviceNoToken.fetchSource(testSource);
 
-      expect(capturedHeaders['Authorization']).toBeUndefined();
+      expect(spy).toHaveBeenCalledWith(testSource, undefined);
     });
   });
 
@@ -815,7 +748,7 @@ describe('MarketplaceService', () => {
       for (const src of BUILTIN_MARKETPLACE_SOURCES) {
         expect(src.owner).toBeTruthy();
         expect(src.repo).toBeTruthy();
-        expect(src.branch).toBe('main');
+        expect(typeof src.branch).toBe('string');
       }
     });
   });
@@ -825,33 +758,11 @@ describe('MarketplaceService', () => {
   // ----------------------------------------------------------
 
   /**
-   * Helper to mock https.get responses by URL.
+   * Helper: spy on _cloneAndReadFiles and make it return a file map.
    */
-  function mockHttpResponses(
-    map: Record<string, { status: number; body: string | Buffer; headers?: Record<string, string> }>
-  ) {
-    vi.mocked(https.get as any).mockImplementation(
-      (_url: string, _opts: unknown, cb: (res: any) => void) => {
-        const entry = map[_url];
-        const res = Object.assign(new EventEmitter(), {
-          statusCode: entry?.status ?? 404,
-          headers: entry?.headers ?? {},
-          resume: vi.fn(),
-        });
-        const req = Object.assign(new EventEmitter(), { end: vi.fn() });
-
-        process.nextTick(() => {
-          cb(res);
-          if (entry && entry.status >= 200 && entry.status < 300) {
-            const bodyBuf = Buffer.isBuffer(entry.body) ? entry.body : Buffer.from(entry.body);
-            res.emit('data', bodyBuf);
-            res.emit('end');
-          }
-        });
-
-        return req;
-      }
-    );
+  function mockClone(svc: MarketplaceService, files: Record<string, string>) {
+    return vi.spyOn(svc as any, '_cloneAndReadFiles')
+      .mockResolvedValue(buildFileMap(files));
   }
 
   describe('fetchSource', () => {
@@ -865,19 +776,10 @@ describe('MarketplaceService', () => {
       isBuiltin: false,
     };
 
-    afterEach(() => {
-      vi.mocked(https.get as any).mockReset();
-    });
-
     it('should fetch and parse remote skills', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'my-skill/SKILL.md': '---\nname: My Skill\ndescription: A test skill\nauthor: tester\n---\n\n# My Skill\n\nContent here.',
-            'README.md': '# Readme',
-          }),
-        },
+      mockClone(service, {
+        'my-skill/SKILL.md': '---\nname: My Skill\ndescription: A test skill\nauthor: tester\n---\n\n# My Skill\n\nContent here.',
+        'README.md': '# Readme',
       });
 
       const skills = await service.fetchSource(testSource);
@@ -891,40 +793,29 @@ describe('MarketplaceService', () => {
     });
 
     it('should use cache on second call', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'a/SKILL.md': '---\nname: A\ndescription: a\n---\nBody',
-          }),
-        },
+      const spy = mockClone(service, {
+        'a/SKILL.md': '---\nname: A\ndescription: a\n---\nBody',
       });
 
       const first = await service.fetchSource(testSource);
       expect(first).toHaveLength(1);
 
-      vi.mocked(https.get as any).mockReset();
+      spy.mockClear();
 
       const second = await service.fetchSource(testSource);
       expect(second).toHaveLength(1);
-      expect(https.get).not.toHaveBeenCalled();
+      expect(spy).not.toHaveBeenCalled();
     });
 
     it('should bypass cache when force=true', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'b/SKILL.md': '---\nname: B\ndescription: b\n---\nBody',
-          }),
-        },
+      const spy = mockClone(service, {
+        'b/SKILL.md': '---\nname: B\ndescription: b\n---\nBody',
       });
 
       await service.fetchSource(testSource);
       const results = await service.fetchSource(testSource, true);
       expect(results).toHaveLength(1);
-      // 1 HTTP call per fetch (archive download), 2 fetches total
-      expect(https.get).toHaveBeenCalledTimes(2);
+      expect(spy).toHaveBeenCalledTimes(2);
     });
 
     it('should filter by source path prefix', async () => {
@@ -934,14 +825,9 @@ describe('MarketplaceService', () => {
         path: 'sub',
       };
 
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'sub/inside/SKILL.md': '---\nname: Inside\ndescription: in\n---\nBody',
-            'outside/SKILL.md': '---\nname: Outside\ndescription: out\n---\nBody',
-          }),
-        },
+      mockClone(service, {
+        'sub/inside/SKILL.md': '---\nname: Inside\ndescription: in\n---\nBody',
+        'outside/SKILL.md': '---\nname: Outside\ndescription: out\n---\nBody',
       });
 
       const skills = await service.fetchSource(pathSource);
@@ -949,84 +835,48 @@ describe('MarketplaceService', () => {
       expect(skills[0].metadata.name).toBe('Inside');
     });
 
-    it('should handle archive with no SKILL.md files', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'README.md': '# No skills here',
-          }),
-        },
+    it('should handle repo with no SKILL.md files', async () => {
+      mockClone(service, {
+        'README.md': '# No skills here',
       });
 
       const skills = await service.fetchSource(testSource);
       expect(skills).toHaveLength(0);
     });
 
-    it('should handle empty archive', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({}),
-        },
-      });
+    it('should handle empty repo', async () => {
+      mockClone(service, {});
 
       const skills = await service.fetchSource(testSource);
       expect(skills).toHaveLength(0);
     });
 
-    it('should reject on HTTP error', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 404,
-          body: 'Not Found',
-        },
-      });
+    it('should reject when clone fails', async () => {
+      vi.spyOn(service as any, '_cloneAndReadFiles')
+        .mockRejectedValue(new Error('git clone failed: repository not found'));
 
-      await expect(service.fetchSource(testSource)).rejects.toThrow('HTTP 404');
+      await expect(service.fetchSource(testSource)).rejects.toThrow('git clone failed');
     });
 
-    it('should reject on invalid archive', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: Buffer.from('not a valid gzip stream'),
-        },
+    it('should auto-resolve default branch when source.branch is empty', async () => {
+      const noBranchSource: MarketplaceSource = {
+        ...testSource,
+        branch: '',
+      };
+      const spy = mockClone(service, {
+        'my-skill/SKILL.md': '---\nname: My Skill\ndescription: desc\n---\n# Content',
       });
 
-      await expect(service.fetchSource(testSource)).rejects.toThrow();
-    });
-
-    it('should follow HTTP redirect', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 301,
-          body: '',
-          headers: {
-            location: 'https://codeload.github.com/testorg/skills/tar.gz/some-redirect',
-          },
-        },
-        'https://codeload.github.com/testorg/skills/tar.gz/some-redirect': {
-          status: 200,
-          body: buildTarGz({
-            'r/SKILL.md': '---\nname: Redirect\ndescription: redir\n---\nBody',
-          }),
-        },
-      });
-
-      const skills = await service.fetchSource(testSource);
+      const skills = await service.fetchSource(noBranchSource);
       expect(skills).toHaveLength(1);
-      expect(skills[0].metadata.name).toBe('Redirect');
+      // _cloneAndReadFiles is called with source that has empty branch
+      // and the implementation does NOT pass --branch to git clone
+      expect(spy).toHaveBeenCalledWith(noBranchSource, undefined);
     });
 
     it('should return untitled when metadata has no name field', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'my-cool-tool/SKILL.md': '---\ndescription: no name\n---\nBody',
-          }),
-        },
+      mockClone(service, {
+        'my-cool-tool/SKILL.md': '---\ndescription: no name\n---\nBody',
       });
 
       const skills = await service.fetchSource(testSource);
@@ -1035,17 +885,12 @@ describe('MarketplaceService', () => {
       expect(skills[0].id).toBe('testorg--skills--my-cool-tool');
     });
 
-    it('should populate additionalFiles for sibling files in the skill directory', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'my-skill/SKILL.md': '---\nname: My Skill\ndescription: desc\n---\nContent',
-            'my-skill/reference.md': '# Reference\n\nDocs here',
-            'my-skill/scripts/helper.sh': '#!/bin/bash\necho hello',
-            'README.md': '# Root readme',
-          }),
-        },
+    it('should populate additionalFiles with content for sibling files', async () => {
+      mockClone(service, {
+        'my-skill/SKILL.md': '---\nname: My Skill\ndescription: desc\n---\nContent',
+        'my-skill/reference.md': '# Reference\n\nDocs here',
+        'my-skill/scripts/helper.sh': '#!/bin/bash\necho hello',
+        'README.md': '# Root readme',
       });
 
       const skills = await service.fetchSource(testSource);
@@ -1057,20 +902,13 @@ describe('MarketplaceService', () => {
       expect(paths).toContain('scripts/helper.sh');
 
       const ref = skills[0].additionalFiles!.find((f) => f.relativePath === 'reference.md')!;
-      expect(ref.downloadUrl).toBe(
-        'https://raw.githubusercontent.com/testorg/skills/main/my-skill/reference.md'
-      );
+      expect(ref.content).toBe('# Reference\n\nDocs here');
     });
 
     it('should set additionalFiles to undefined when there are no siblings', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'solo-skill/SKILL.md': '---\nname: Solo\ndescription: alone\n---\nBody',
-            'README.md': '# Root',
-          }),
-        },
+      mockClone(service, {
+        'solo-skill/SKILL.md': '---\nname: Solo\ndescription: alone\n---\nBody',
+        'README.md': '# Root',
       });
 
       const skills = await service.fetchSource(testSource);
@@ -1088,25 +926,14 @@ describe('MarketplaceService', () => {
         branch: 'main', path: '', label: 'Org B', isBuiltin: false,
       };
 
-      mockHttpResponses({
-        'https://codeload.github.com/orgA/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'code-review/SKILL.md': '---\nname: Code Review\ndescription: from A\n---\nBody A',
-          }),
-        },
+      mockClone(service, {
+        'code-review/SKILL.md': '---\nname: Code Review\ndescription: from A\n---\nBody A',
       });
       const skillsA = await service.fetchSource(sourceA);
 
-      vi.mocked(https.get as any).mockReset();
-
-      mockHttpResponses({
-        'https://codeload.github.com/orgB/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'code-review/SKILL.md': '---\nname: Code Review\ndescription: from B\n---\nBody B',
-          }),
-        },
+      service.clearCache();
+      mockClone(service, {
+        'code-review/SKILL.md': '---\nname: Code Review\ndescription: from B\n---\nBody B',
       });
       const skillsB = await service.fetchSource(sourceB);
 
@@ -1124,13 +951,8 @@ describe('MarketplaceService', () => {
         path: 'sub',
       };
 
-      mockHttpResponses({
-        'https://codeload.github.com/testorg/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'sub/inside/SKILL.md': '---\nname: Inside\ndescription: in\n---\nBody',
-          }),
-        },
+      mockClone(service, {
+        'sub/inside/SKILL.md': '---\nname: Inside\ndescription: in\n---\nBody',
       });
 
       const skills = await service.fetchSource(pathSource);
@@ -1139,7 +961,6 @@ describe('MarketplaceService', () => {
     });
 
     it('should install skills from different sources without collision', async () => {
-      // Install a skill from sourceA
       const remoteA = {
         source: { id: 'orgA/skills', owner: 'orgA', repo: 'skills', branch: 'main', path: '', label: 'A', isBuiltin: false } as MarketplaceSource,
         id: 'orgA--skills--my-skill',
@@ -1161,7 +982,6 @@ describe('MarketplaceService', () => {
       await service.installSkill(remoteA);
       await service.installSkill(remoteB);
 
-      // Both should exist independently
       const skillA = await storageService.readSkill('orgA--skills--my-skill');
       const skillB = await storageService.readSkill('orgB--skills--my-skill');
       expect(skillA).not.toBeNull();
@@ -1170,32 +990,19 @@ describe('MarketplaceService', () => {
       expect(skillB!.metadata.description).toBe('from B');
     });
 
-    it('should handle network error', async () => {
-      vi.mocked(https.get as any).mockImplementation(
-        (_url: string, _opts: unknown, _cb: (...args: any[]) => void) => {
-          const req = Object.assign(new EventEmitter(), { end: vi.fn() });
-          process.nextTick(() => req.emit('error', new Error('ECONNREFUSED')));
-          return req;
-        }
-      );
+    it('should handle clone error', async () => {
+      vi.spyOn(service as any, '_cloneAndReadFiles')
+        .mockRejectedValue(new Error('ECONNREFUSED'));
 
       await expect(service.fetchSource(testSource)).rejects.toThrow('ECONNREFUSED');
     });
   });
 
   describe('fetchAll', () => {
-    afterEach(() => {
-      vi.mocked(https.get as any).mockReset();
-    });
 
     it('should aggregate skills from all sources', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/anthropics/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'alpha/SKILL.md': '---\nname: Alpha\ndescription: a\n---\nBody',
-          }),
-        },
+      mockClone(service, {
+        'alpha/SKILL.md': '---\nname: Alpha\ndescription: a\n---\nBody',
       });
 
       const skills = await service.fetchAll();
@@ -1204,19 +1011,15 @@ describe('MarketplaceService', () => {
     });
 
     it('should throw when all sources fail', async () => {
-      mockHttpResponses({});
+      vi.spyOn(service as any, '_cloneAndReadFiles')
+        .mockRejectedValue(new Error('clone failed'));
 
       await expect(service.fetchAll()).rejects.toThrow(/failed to load/i);
     });
 
     it('should force refresh all sources', async () => {
-      mockHttpResponses({
-        'https://codeload.github.com/anthropics/skills/tar.gz/refs/heads/main': {
-          status: 200,
-          body: buildTarGz({
-            'a/SKILL.md': '---\nname: A\ndescription: a\n---\nBody',
-          }),
-        },
+      mockClone(service, {
+        'a/SKILL.md': '---\nname: A\ndescription: a\n---\nBody',
       });
 
       await service.fetchAll();
