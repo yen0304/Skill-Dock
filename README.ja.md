@@ -46,7 +46,7 @@ code --install-extension skill-dock.skill-dock
 
 GitHubリポジトリからエージェントスキルを閲覧・インストール：
 
-- **ビルトインソース**: Anthropic Skills、OpenAI Skills、GitHub Awesome Copilot Skills、Vercel Skills、Vercel Agent Skills
+- **ビルトインソース**: Anthropic Skills、OpenAI Skills、GitHub Awesome Copilot Skills、Hugging Face Skills、Vercel Agent Skills
 - **skills.sh エコシステム検索**: [skills.sh](https://skills.sh) レジストリ全体（`npx skills` と同じバックエンド）をマーケットプレイスから直接検索。数千のコミュニティスキルを発見し、ワンクリックでライブラリにインストール。
 - **カスタムソース**: 任意のGitHubリポジトリURLをスキルソースとして追加
 - **パネル内プレビュー**: スキルをクリックしてレンダリングされた全コンテンツを表示

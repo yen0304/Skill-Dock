@@ -46,7 +46,7 @@ Full CRUD operations: create, view, edit, delete, duplicate, and search.
 
 Browse and install agent skills from GitHub repositories:
 
-- **Built-in sources**: Anthropic Skills, OpenAI Skills, GitHub Awesome Copilot Skills, Vercel Skills, Vercel Agent Skills
+- **Built-in sources**: Anthropic Skills, OpenAI Skills, GitHub Awesome Copilot Skills, Hugging Face Skills, Vercel Agent Skills
 - **skills.sh ecosystem search**: Search the entire [skills.sh](https://skills.sh) registry (the same backend used by `npx skills`) directly from the marketplace. Discover thousands of community skills and install them to your library with one click.
 - **Custom sources**: Add any GitHub repo URL as a skill source
 - **In-panel preview**: Click a skill to see its full rendered content

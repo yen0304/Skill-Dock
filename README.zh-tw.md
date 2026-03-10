@@ -46,7 +46,7 @@ Skills 儲存在本地電腦上（預設為 `~/.skilldock/skills/`）。
 
 從 GitHub 儲存庫瀏覽並安裝 Agent Skills：
 
-- **內建來源**：Anthropic Skills、OpenAI Skills、GitHub Awesome Copilot Skills、Vercel Skills、Vercel Agent Skills
+- **內建來源**：Anthropic Skills、OpenAI Skills、GitHub Awesome Copilot Skills、Hugging Face Skills、Vercel Agent Skills
 - **skills.sh 生態系搜尋**：直接從市集搜尋整個 [skills.sh](https://skills.sh) 登錄庫（與 `npx skills` 使用相同後端）。探索數千個社群 Skills，一鍵安裝到管理庫。
 - **自訂來源**：新增任何 GitHub 儲存庫 URL 作為 Skill 來源
 - **面板內預覽**：點擊 Skill 查看完整渲染內容
