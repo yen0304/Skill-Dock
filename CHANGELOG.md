@@ -5,6 +5,12 @@ All notable changes to the Skill Dock extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2026-03-11
+
+### Changed
+
+- **Source brand icons in Marketplace**: Each skill in the Agent Skill Marketplace now displays an SVG icon representing its source organisation (Anthropic, OpenAI, GitHub, Hugging Face, Vercel) instead of the generic sparkle character. Custom sources show a layered-box fallback icon. Applies to both the Sources tab and the skills.sh Registry tab.
+
 ## [0.8.2] - 2026-03-10
 
 ### Fixed
