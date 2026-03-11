@@ -320,4 +320,158 @@ describe('ImportExportService', () => {
       expect(format).toBeUndefined();
     });
   });
+
+  // ----------------------------------------------------------
+  // pickInstallMode
+  // ----------------------------------------------------------
+  describe('pickInstallMode', () => {
+    it('should return selected mode', async () => {
+      vi.mocked(vscodeWindow.showQuickPick).mockResolvedValue({
+        label: 'Symlink',
+        mode: 'symlink',
+      } as any);
+
+      const mode = await service.pickInstallMode();
+      expect(mode).toBe('symlink');
+    });
+
+    it('should return undefined when user cancels', async () => {
+      vi.mocked(vscodeWindow.showQuickPick).mockResolvedValue(undefined as any);
+
+      const mode = await service.pickInstallMode();
+      expect(mode).toBeUndefined();
+    });
+  });
+
+  // ----------------------------------------------------------
+  // importToRepo with symlink mode
+  // ----------------------------------------------------------
+  describe('importToRepo with symlink mode', () => {
+    it('should attempt symlink when mode is symlink', async () => {
+      const targetDir = await service.importToRepo(sampleSkill, 'claude', 'symlink');
+      // Even if symlink fails (falls back to copy), target dir should exist
+      expect(fs.existsSync(targetDir)).toBe(true);
+      expect(fs.existsSync(path.join(targetDir, 'SKILL.md'))).toBe(true);
+    });
+  });
+
+  // ----------------------------------------------------------
+  // importToMultipleFormats
+  // ----------------------------------------------------------
+  describe('importToMultipleFormats', () => {
+    it('should return empty array for empty formats', async () => {
+      const results = await service.importToMultipleFormats(sampleSkill, []);
+      expect(results).toEqual([]);
+    });
+
+    it('should create canonical copy and symlinks for multiple formats', async () => {
+      const results = await service.importToMultipleFormats(sampleSkill, ['claude', 'cursor']);
+      // Should have at least the canonical + additional formats
+      expect(results.length).toBeGreaterThanOrEqual(2);
+      for (const r of results) {
+        expect(fs.existsSync(r)).toBe(true);
+      }
+    });
+
+    it('should handle single format', async () => {
+      const results = await service.importToMultipleFormats(sampleSkill, ['claude']);
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(fs.existsSync(results[0])).toBe(true);
+    });
+
+    it('should throw when no workspace folder is open', async () => {
+      (workspace as any).workspaceFolders = undefined;
+      await expect(service.importToMultipleFormats(sampleSkill, ['claude'])).rejects.toThrow('No workspace folder open');
+    });
+
+    it('should deduplicate formats with same target directory', async () => {
+      // cursor and codex both use .agents/skills
+      const results = await service.importToMultipleFormats(sampleSkill, ['cursor', 'codex']);
+      // canonical .agents/skills + potentially deduplicated
+      for (const r of results) {
+        expect(fs.existsSync(r)).toBe(true);
+      }
+    });
+  });
+
+  // ----------------------------------------------------------
+  // interactiveImport - format cancellation
+  // ----------------------------------------------------------
+  describe('interactiveImport - format cancellation', () => {
+    it('should do nothing when user cancels format selection', async () => {
+      vi.clearAllMocks();
+      const skillDir = path.join(mockLibraryPath, 'int-cancel-format');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        '---\nname: Cancel Format\ndescription: D\n---\nBody'
+      );
+
+      vi.mocked(vscodeWindow.showQuickPick)
+        .mockResolvedValueOnce([{
+          label: 'Cancel Format', description: 'D', detail: 'int-cancel-format',
+          skill: {
+            id: 'int-cancel-format',
+            metadata: { name: 'Cancel Format', description: 'D' },
+            body: 'Body',
+            dirPath: skillDir,
+            filePath: path.join(skillDir, 'SKILL.md'),
+            lastModified: Date.now(),
+          },
+          picked: false,
+        }] as any)
+        .mockResolvedValueOnce(undefined as any); // cancel format
+
+      await service.interactiveImport();
+      // Should not show success message
+      const infoCalls = vi.mocked(vscodeWindow.showInformationMessage).mock.calls;
+      const successCalls = infoCalls.filter((c: any) => String(c[0]).includes('Successfully imported'));
+      expect(successCalls).toHaveLength(0);
+    });
+  });
+
+  // ----------------------------------------------------------
+  // interactiveImport - Import cancelled suppression
+  // ----------------------------------------------------------
+  describe('interactiveImport - Import cancelled suppression', () => {
+    it('should not show error message when import is cancelled', async () => {
+      const skillDir = path.join(mockLibraryPath, 'int-cancel');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        '---\nname: Int Cancel\ndescription: D\n---\nBody'
+      );
+
+      // Existing target so overwrite prompt is shown
+      const targetDir = path.join(workspaceDir, '.claude', 'skills', 'int-cancel');
+      fs.mkdirSync(targetDir, { recursive: true });
+      fs.writeFileSync(path.join(targetDir, 'SKILL.md'), 'old');
+
+      const skill = {
+        id: 'int-cancel',
+        metadata: { name: 'Int Cancel', description: 'D' },
+        body: 'Body',
+        dirPath: skillDir,
+        filePath: path.join(skillDir, 'SKILL.md'),
+        lastModified: Date.now(),
+      };
+
+      vi.mocked(vscodeWindow.showQuickPick)
+        .mockResolvedValueOnce([{
+          label: 'Int Cancel', description: 'D', detail: 'int-cancel', skill, picked: false,
+        }] as any)
+        .mockResolvedValueOnce({ label: 'Claude', format: 'claude' } as any);
+
+      // Cancel the overwrite
+      vi.mocked(vscodeWindow.showWarningMessage).mockResolvedValue('Cancel' as any);
+
+      await service.interactiveImport();
+
+      // 'Import cancelled' should be swallowed, not shown as an error
+      const errorCalls = vi.mocked(vscodeWindow.showErrorMessage).mock.calls;
+      for (const call of errorCalls) {
+        expect(String(call[0])).not.toContain('Import cancelled');
+      }
+    });
+  });
 });

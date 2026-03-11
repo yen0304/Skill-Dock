@@ -18,7 +18,11 @@ vi.mock('vscode', () => ({
   },
 }));
 
-vi.mock('https', () => ({ get: vi.fn() }));
+const { mockHttpsGet } = vi.hoisted(() => {
+  const mockHttpsGet = vi.fn();
+  return { mockHttpsGet };
+});
+vi.mock('https', () => ({ get: mockHttpsGet }));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -264,6 +268,146 @@ describe('SkillsRegistryService', () => {
 
     it('should handle singular', () => {
       expect(SkillsRegistryService.formatInstalls(1)).toBe('1 install');
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // search – via mocked https
+  // ---------------------------------------------------------------
+
+  describe('search', () => {
+    function mockHttpResponse(statusCode: number, body: string, headers?: Record<string, string>) {
+      mockHttpsGet.mockImplementation((_url: string, _opts: any, cb: any) => {
+        const res = {
+          statusCode,
+          headers: headers ?? {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === 'data') { handler(Buffer.from(body)); }
+            if (event === 'end') { handler(); }
+            return res;
+          }),
+          resume: vi.fn(),
+        };
+        cb(res);
+        return { on: vi.fn(), end: vi.fn(), destroy: vi.fn() };
+      });
+    }
+
+    it('should return empty for short query', async () => {
+      const result = await service.search('a');
+      expect(result.skills).toEqual([]);
+      expect(result.count).toBe(0);
+    });
+
+    it('should return empty for empty query', async () => {
+      const result = await service.search('');
+      expect(result.skills).toEqual([]);
+    });
+
+    it('should fetch and parse search results', async () => {
+      const responseBody = JSON.stringify({
+        query: 'react',
+        skills: [
+          { id: 'org/repo/react-skill', skillId: 'react-skill', name: 'React Skill', installs: 500, source: 'org/repo' },
+        ],
+        count: 1,
+      });
+      mockHttpResponse(200, responseBody);
+
+      const result = await service.search('react');
+      expect(result.query).toBe('react');
+      expect(result.skills).toHaveLength(1);
+      expect(result.skills[0].name).toBe('React Skill');
+      expect(result.count).toBe(1);
+    });
+
+    it('should throw on HTTP error', async () => {
+      mockHttpResponse(500, 'Internal Server Error');
+
+      await expect(service.search('react')).rejects.toThrow('HTTP 500');
+    });
+
+    it('should follow redirects', async () => {
+      let callCount = 0;
+      mockHttpsGet.mockImplementation((_url: string, _opts: any, cb: any) => {
+        callCount++;
+        if (callCount === 1) {
+          // Redirect
+          const res = {
+            statusCode: 302,
+            headers: { location: 'https://skills.sh/api/v2/search' },
+            on: vi.fn(),
+            resume: vi.fn(),
+          };
+          cb(res);
+          return { on: vi.fn(), end: vi.fn(), destroy: vi.fn() };
+        }
+        // Actual response
+        const body = JSON.stringify({ query: 'react', skills: [], count: 0 });
+        const res = {
+          statusCode: 200,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === 'data') { handler(Buffer.from(body)); }
+            if (event === 'end') { handler(); }
+            return res;
+          }),
+          resume: vi.fn(),
+        };
+        cb(res);
+        return { on: vi.fn(), end: vi.fn(), destroy: vi.fn() };
+      });
+
+      const result = await service.search('react');
+      expect(result.count).toBe(0);
+      expect(callCount).toBe(2);
+    });
+
+    it('should handle timeout', async () => {
+      mockHttpsGet.mockImplementation((_url: string, _opts: any, _cb: any) => {
+        const req = {
+          on: vi.fn((event: string, handler: any) => {
+            if (event === 'timeout') {
+              handler();
+            }
+            return req;
+          }),
+          end: vi.fn(),
+          destroy: vi.fn(),
+        };
+        return req;
+      });
+
+      await expect(service.search('react')).rejects.toThrow('timed out');
+    });
+
+    it('should handle request error', async () => {
+      mockHttpsGet.mockImplementation((_url: string, _opts: any, _cb: any) => {
+        const req = {
+          on: vi.fn((event: string, handler: any) => {
+            if (event === 'error') {
+              handler(new Error('ECONNREFUSED'));
+            }
+            return req;
+          }),
+          end: vi.fn(),
+          destroy: vi.fn(),
+        };
+        return req;
+      });
+
+      await expect(service.search('react')).rejects.toThrow('ECONNREFUSED');
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // installFromRegistry – _parseSource with invalid / GitHub URL
+  // ---------------------------------------------------------------
+
+  describe('installFromRegistry – source parsing', () => {
+    it('should throw for unparseable source', async () => {
+      const entry = makeRegistryEntry({ source: '' });
+      await expect(service.installFromRegistry(entry)).rejects.toThrow('Cannot parse skill source');
     });
   });
 });

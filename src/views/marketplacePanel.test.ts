@@ -1163,3 +1163,129 @@ describe('MarketplacePanel update handler', () => {
     expect(skillData.hasUpdate).toBe(true);
   });
 });
+
+// ----------------------------------------------------------
+// searchRegistry / installFromRegistry message handlers
+// ----------------------------------------------------------
+describe('MarketplacePanel registry handlers', () => {
+  beforeEach(() => {
+    MarketplacePanel.currentPanel = undefined;
+    vi.clearAllMocks();
+  });
+
+  function setupPanel(serviceOverrides: Record<string, any> = {}, registryOverrides: Record<string, any> = {}) {
+    const mock = createMockWebviewPanel();
+    vi.mocked(vscodeWindow.createWebviewPanel).mockReturnValue(mock.panel as any);
+
+    const onRefresh = vi.fn();
+    const mockMarketplaceService = {
+      getSources: vi.fn(() => [{ id: 'anthropic', label: 'Anthropic Skills', isBuiltin: true }]),
+      fetchAll: vi.fn().mockResolvedValue([]),
+      getInstalledIds: vi.fn().mockResolvedValue(new Set()),
+      getInstalledVersionMap: vi.fn().mockResolvedValue(new Map()),
+      installSkill: vi.fn().mockResolvedValue(undefined),
+      addCustomSource: vi.fn().mockResolvedValue(undefined),
+      removeCustomSource: vi.fn().mockResolvedValue(undefined),
+      ...serviceOverrides,
+    } as any;
+
+    const mockRegistryService = {
+      search: vi.fn().mockResolvedValue({ query: '', skills: [], count: 0 }),
+      installFromRegistry: vi.fn().mockResolvedValue(undefined),
+      ...registryOverrides,
+    } as any;
+
+    MarketplacePanel.createOrShow(
+      { path: '/mock/ext', fsPath: '/mock/ext' } as any,
+      mockMarketplaceService,
+      mockRegistryService,
+      onRefresh,
+    );
+
+    return { mock, onRefresh, mockMarketplaceService, mockRegistryService };
+  }
+
+  it('should handle searchRegistry message — success', async () => {
+    const searchResult = {
+      query: 'react',
+      skills: [
+        { id: 'org/repo/react', skillId: 'react', name: 'React Skill', installs: 1500, source: 'org/repo' },
+      ],
+      count: 1,
+    };
+
+    const { mock, mockRegistryService } = setupPanel({}, {
+      search: vi.fn().mockResolvedValue(searchResult),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'searchRegistry', query: 'react' });
+
+    expect(mockRegistryService.search).toHaveBeenCalledWith('react', 30);
+    expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'registrySearching' }),
+    );
+    expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'registryResults',
+        skills: expect.arrayContaining([expect.objectContaining({ name: 'React Skill' })]),
+      }),
+    );
+  });
+
+  it('should handle searchRegistry message — error', async () => {
+    const { mock } = setupPanel({}, {
+      search: vi.fn().mockRejectedValue(new Error('network fail')),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'searchRegistry', query: 'react' });
+
+    expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'registryResults',
+        skills: [],
+        error: expect.stringContaining('network fail'),
+      }),
+    );
+  });
+
+  it('should handle installFromRegistry message — success', async () => {
+    const entry = { id: 'org/repo/skill', skillId: 'skill', name: 'Skill', installs: 100, source: 'org/repo' };
+
+    const { mock, onRefresh, mockRegistryService } = setupPanel({}, {
+      installFromRegistry: vi.fn().mockResolvedValue(undefined),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'installFromRegistry', entry });
+
+    expect(mockRegistryService.installFromRegistry).toHaveBeenCalledWith(entry);
+    expect(onRefresh).toHaveBeenCalled();
+    expect(vscodeWindow.showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Skill'),
+    );
+    expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'registryInstalling', skillId: 'skill' }),
+    );
+    expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'registryInstalled', skillId: 'skill' }),
+    );
+  });
+
+  it('should handle installFromRegistry message — error', async () => {
+    const entry = { id: 'org/repo/skill', skillId: 'skill', name: 'Skill', installs: 100, source: 'org/repo' };
+
+    const { mock } = setupPanel({}, {
+      installFromRegistry: vi.fn().mockRejectedValue(new Error('install failed')),
+    });
+    const handler = mock.getMessageHandler()!;
+
+    await handler({ command: 'installFromRegistry', entry });
+
+    expect(vscodeWindow.showErrorMessage).toHaveBeenCalled();
+    expect(mock.panel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'registryInstallFailed', skillId: 'skill' }),
+    );
+  });
+});
