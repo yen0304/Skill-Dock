@@ -1,10 +1,5 @@
 import * as vscode from 'vscode';
 import * as https from 'https';
-import { execFile } from 'child_process';
-import { readdir, readFile as fsReadFile, mkdtemp, rm } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join, normalize, resolve, sep } from 'path';
-import { promisify } from 'util';
 import {
   MarketplaceSource,
   RemoteAdditionalFile,
@@ -13,8 +8,6 @@ import {
 } from '../models/skill';
 import { parseFrontmatter } from '../utils/skillParser';
 import { StorageService } from './storageService';
-
-const execFileAsync = promisify(execFile);
 
 /** Cache entry with TTL */
 interface CacheEntry<T> {
@@ -122,61 +115,66 @@ export class MarketplaceService {
     }
 
     const token = await this._resolveToken();
-    const repoFiles = await this._cloneAndReadFiles(source, token);
+    const { branch, paths } = await this._fetchRepoTree(source, token);
 
     const prefix = source.path ? source.path.replace(/\/+$/, '') + '/' : '';
-    const allPaths = [...repoFiles.keys()];
-    const skillMdPaths = allPaths.filter((p) => {
+    const skillMdPaths = paths.filter((p) => {
       const lower = p.toLowerCase();
       const isSkillMd = lower.endsWith('/skill.md') || lower === 'skill.md';
       return isSkillMd && (!prefix || p.startsWith(prefix));
     });
 
-    const skills: RemoteSkill[] = [];
-    for (const mdPath of skillMdPaths) {
-      const content = repoFiles.get(mdPath);
-      if (!content) { continue; }
-
-      const { metadata, body } = parseFrontmatter(content);
-      if (!metadata.name) {
-        const parts = mdPath.split('/');
-        const dir = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
-        metadata.name = dir
-          .replace(/-/g, ' ')
-          .replace(/\b\w/g, (c) => c.toUpperCase());
-      }
-      if (!metadata.description) {
-        metadata.description = '';
-      }
-
-      const parts = mdPath.split('/');
-      const dirName = parts.length >= 2 ? parts[parts.length - 2] : source.repo;
-      const skillId = MarketplaceService.makeSkillId(source, dirName);
-
-      const skillDir = mdPath.substring(0, mdPath.lastIndexOf('/'));
-      const additionalFiles: RemoteAdditionalFile[] = skillDir
-        ? allPaths
-            .filter((p) => p !== mdPath && p.startsWith(skillDir + '/'))
-            .map((p) => ({
-              relativePath: p.substring(skillDir.length + 1),
-              content: repoFiles.get(p),
-            }))
-        : [];
-
-      const rawUrl = `https://github.com/${source.owner}/${source.repo}`;
-      skills.push({
-        source,
-        id: skillId,
-        metadata,
-        body,
-        repoPath: mdPath,
-        downloadUrl: rawUrl,
-        additionalFiles: additionalFiles.length > 0 ? additionalFiles : undefined,
-      });
-    }
+    // Fetch only the SKILL.md files (small) in parallel; sibling files are
+    // referenced lazily by download URL and only fetched at install time.
+    const skills = await Promise.all(
+      skillMdPaths.map((mdPath) => this._buildRemoteSkill(source, branch, mdPath, paths, token))
+    );
 
     this._cache.set(source.id, { data: skills, timestamp: Date.now() });
     return skills;
+  }
+
+  /** Fetch a single SKILL.md and assemble its RemoteSkill (with lazy sibling refs). */
+  private async _buildRemoteSkill(
+    source: MarketplaceSource,
+    branch: string,
+    mdPath: string,
+    allPaths: string[],
+    token?: string,
+  ): Promise<RemoteSkill> {
+    const content = await this._httpGetText(this._rawUrl(source, branch, mdPath), token);
+    const { metadata, body } = parseFrontmatter(content);
+
+    const parts = mdPath.split('/');
+    const dirName = parts.length >= 2 ? parts[parts.length - 2] : source.repo;
+    if (!metadata.name) {
+      const dir = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+      metadata.name = dir.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+    if (!metadata.description) {
+      metadata.description = '';
+    }
+
+    const skillId = MarketplaceService.makeSkillId(source, dirName);
+    const skillDir = mdPath.substring(0, mdPath.lastIndexOf('/'));
+    const additionalFiles: RemoteAdditionalFile[] = skillDir
+      ? allPaths
+          .filter((p) => p !== mdPath && p.startsWith(skillDir + '/'))
+          .map((p) => ({
+            relativePath: p.substring(skillDir.length + 1),
+            downloadUrl: this._rawUrl(source, branch, p),
+          }))
+      : [];
+
+    return {
+      source,
+      id: skillId,
+      metadata,
+      body,
+      repoPath: mdPath,
+      downloadUrl: `https://github.com/${source.owner}/${source.repo}`,
+      additionalFiles: additionalFiles.length > 0 ? additionalFiles : undefined,
+    };
   }
 
   /** Fetch the raw content of a remote file by its download URL. */
@@ -262,74 +260,63 @@ export class MarketplaceService {
   }
 
   // ------------------------------------------------------------------
-  // Git clone-based fetching
+  // GitHub trees-API based fetching
   // ------------------------------------------------------------------
 
-  /** Clone timeout in ms. */
-  private static readonly CLONE_TIMEOUT_MS = 60_000;
+  /** GitHub REST API base. */
+  private static readonly GITHUB_API = 'https://api.github.com';
 
-  /** Directories to skip when reading a cloned repo. */
-  private static readonly SKIP_DIRS = new Set(['.git', 'node_modules', '.DS_Store']);
+  /** raw.githubusercontent.com base for downloading file content. */
+  private static readonly RAW_BASE = 'https://raw.githubusercontent.com';
+
+  /** Accept header for GitHub REST API requests. */
+  private static readonly GH_ACCEPT = 'application/vnd.github+json';
 
   /**
-   * Clone the repo with `git clone --depth 1` and read all files.
+   * Fetch the full recursive file tree of a repo via the GitHub trees API.
+   *
+   * This is dramatically faster than cloning the whole repo: a single API
+   * call returns every path, and we then download only the SKILL.md files
+   * we actually need (rather than the entire repository, which can be tens
+   * of megabytes for sources like github/awesome-copilot).
+   *
+   * @returns the resolved branch and the list of blob (file) paths.
    */
-  private async _cloneAndReadFiles(source: MarketplaceSource, token?: string): Promise<Map<string, string>> {
-    const url = `https://github.com/${source.owner}/${source.repo}.git`;
-    const tmpDir = await mkdtemp(join(tmpdir(), 'skilldock-'));
-    try {
-      const args = ['clone', '--depth', '1'];
-      if (token) {
-        args.push('-c', `http.extraHeader=Authorization: token ${token}`);
-      }
-      if (source.branch) {
-        args.push('--branch', source.branch);
-      }
-      args.push('--', url, tmpDir);
-
-      await execFileAsync('git', args, {
-        timeout: MarketplaceService.CLONE_TIMEOUT_MS,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-      });
-
-      return await MarketplaceService._readDirRecursive(tmpDir);
-    } finally {
-      await MarketplaceService._cleanupTmpDir(tmpDir);
+  private async _fetchRepoTree(
+    source: MarketplaceSource,
+    token?: string,
+  ): Promise<{ branch: string; paths: string[] }> {
+    const branch = source.branch || (await this._resolveDefaultBranch(source, token));
+    const url =
+      `${MarketplaceService.GITHUB_API}/repos/${source.owner}/${source.repo}` +
+      `/git/trees/${encodeURIComponent(branch)}?recursive=1`;
+    const json = await this._httpGetText(url, token, MarketplaceService.GH_ACCEPT);
+    const data = JSON.parse(json) as {
+      tree?: Array<{ path: string; type: string }>;
+      truncated?: boolean;
+    };
+    if (data.truncated) {
+      console.warn(
+        `[SkillDock] Tree for ${source.owner}/${source.repo} was truncated; some skills may be missing.`,
+      );
     }
+    const paths = (data.tree ?? [])
+      .filter((e) => e.type === 'blob')
+      .map((e) => e.path);
+    return { branch, paths };
   }
 
-  /** Recursively read all files from a directory into a Map<relativePath, content>. */
-  static async _readDirRecursive(baseDir: string, current = ''): Promise<Map<string, string>> {
-    const files = new Map<string, string>();
-    const dir = current ? join(baseDir, current) : baseDir;
-    const entries = await readdir(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      if (MarketplaceService.SKIP_DIRS.has(entry.name)) { continue; }
-      const relPath = current ? `${current}/${entry.name}` : entry.name;
-
-      if (entry.isDirectory()) {
-        const sub = await MarketplaceService._readDirRecursive(baseDir, relPath);
-        for (const [k, v] of sub) { files.set(k, v); }
-      } else if (entry.isFile()) {
-        try {
-          const content = await fsReadFile(join(baseDir, relPath), 'utf-8');
-          files.set(relPath, content);
-        } catch {
-          // Skip binary files
-        }
-      }
-    }
-
-    return files;
+  /** Resolve a repo's default branch via the GitHub API. */
+  private async _resolveDefaultBranch(source: MarketplaceSource, token?: string): Promise<string> {
+    const url = `${MarketplaceService.GITHUB_API}/repos/${source.owner}/${source.repo}`;
+    const json = await this._httpGetText(url, token, MarketplaceService.GH_ACCEPT);
+    const data = JSON.parse(json) as { default_branch?: string };
+    return data.default_branch || 'main';
   }
 
-  /** Safely remove a temp directory (only if it's actually under os.tmpdir()). */
-  private static async _cleanupTmpDir(dir: string): Promise<void> {
-    const normalizedDir = normalize(resolve(dir));
-    const normalizedTmp = normalize(resolve(tmpdir()));
-    if (!normalizedDir.startsWith(normalizedTmp + sep)) { return; }
-    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  /** Build a raw.githubusercontent.com URL for a file at a given branch. */
+  private _rawUrl(source: MarketplaceSource, branch: string, filePath: string): string {
+    return `${MarketplaceService.RAW_BASE}/${source.owner}/${source.repo}/${branch}/${filePath}`;
   }
 
   // ------------------------------------------------------------------
@@ -360,11 +347,11 @@ export class MarketplaceService {
   private static readonly HTTP_TIMEOUT_MS = 15_000;
 
   /** Perform an HTTPS GET and return text. */
-  private _httpGetText(url: string, token?: string): Promise<string> {
+  private _httpGetText(url: string, token?: string, accept?: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const req = https.get(url, { headers: this._getHeaders(undefined, token), timeout: MarketplaceService.HTTP_TIMEOUT_MS }, (res) => {
+      const req = https.get(url, { headers: this._getHeaders(accept, token), timeout: MarketplaceService.HTTP_TIMEOUT_MS }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          this._httpGetText(res.headers.location, token).then(resolve, reject);
+          this._httpGetText(res.headers.location, token, accept).then(resolve, reject);
           return;
         }
         if (res.statusCode && res.statusCode >= 400) {

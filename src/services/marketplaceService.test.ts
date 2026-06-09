@@ -4,14 +4,6 @@ import * as path from 'path';
 import * as os from 'os';
 import { EventEmitter } from 'events';
 
-/**
- * Build a Map<string, string> from a plain object — used to mock
- * the result of _cloneAndReadFiles (replaces the old buildTarGz).
- */
-function buildFileMap(files: Record<string, string>): Map<string, string> {
-  return new Map(Object.entries(files));
-}
-
 let mockLibraryPath = '';
 let mockMarketplaceSources: string[] = [];
 let mockGlobalUpdate = vi.fn();
@@ -665,12 +657,12 @@ describe('MarketplaceService', () => {
   // Token resolution (getToken callback)
   // ----------------------------------------------------------
   describe('getToken callback', () => {
-    it('should pass token to _cloneAndReadFiles', async () => {
+    it('should pass token to _fetchRepoTree', async () => {
       const mockGetToken = vi.fn().mockResolvedValue('secret-token-abc');
       const serviceWithToken = new MarketplaceService(storageService, mockGetToken);
 
-      const spy = vi.spyOn(serviceWithToken as any, '_cloneAndReadFiles')
-        .mockResolvedValue(buildFileMap({}));
+      const spy = vi.spyOn(serviceWithToken as any, '_fetchRepoTree')
+        .mockResolvedValue({ branch: 'main', paths: [] });
 
       const testSource: MarketplaceSource = {
         id: 'tok/test', owner: 'tok', repo: 'test', branch: 'main', path: '', label: 'Tok', isBuiltin: false,
@@ -686,8 +678,8 @@ describe('MarketplaceService', () => {
       const mockGetToken = vi.fn().mockResolvedValue(undefined);
       const serviceNoToken = new MarketplaceService(storageService, mockGetToken);
 
-      const spy = vi.spyOn(serviceNoToken as any, '_cloneAndReadFiles')
-        .mockResolvedValue(buildFileMap({}));
+      const spy = vi.spyOn(serviceNoToken as any, '_fetchRepoTree')
+        .mockResolvedValue({ branch: 'main', paths: [] });
 
       const testSource: MarketplaceSource = {
         id: 'no/tok', owner: 'no', repo: 'tok', branch: 'main', path: '', label: 'No', isBuiltin: false,
@@ -734,8 +726,8 @@ describe('MarketplaceService', () => {
   // Builtin sources validation
   // ----------------------------------------------------------
   describe('BUILTIN_MARKETPLACE_SOURCES', () => {
-    it('should have 5 builtin sources', () => {
-      expect(BUILTIN_MARKETPLACE_SOURCES).toHaveLength(5);
+    it('should have 6 builtin sources', () => {
+      expect(BUILTIN_MARKETPLACE_SOURCES).toHaveLength(6);
     });
 
     it('should all be marked as builtin', () => {
@@ -758,11 +750,22 @@ describe('MarketplaceService', () => {
   // ----------------------------------------------------------
 
   /**
-   * Helper: spy on _cloneAndReadFiles and make it return a file map.
+   * Helper: mock the trees-API fetch. Spies on `_fetchRepoTree` to return the
+   * given paths, and on `_httpGetText` to serve each file's content by raw URL.
+   * Returns the `_fetchRepoTree` spy for call assertions.
    */
-  function mockClone(svc: MarketplaceService, files: Record<string, string>) {
-    return vi.spyOn(svc as any, '_cloneAndReadFiles')
-      .mockResolvedValue(buildFileMap(files));
+  function mockRepo(svc: MarketplaceService, files: Record<string, string>, branch = 'main') {
+    const paths = Object.keys(files);
+    const treeSpy = vi.spyOn(svc as any, '_fetchRepoTree')
+      .mockResolvedValue({ branch, paths });
+    vi.spyOn(svc as any, '_httpGetText').mockImplementation(async (...args: unknown[]) => {
+      const url = args[0] as string;
+      for (const p of paths) {
+        if (url.endsWith(`/${branch}/${p}`)) { return files[p]; }
+      }
+      throw new Error(`HTTP 404 for ${url}`);
+    });
+    return treeSpy;
   }
 
   describe('fetchSource', () => {
@@ -777,7 +780,7 @@ describe('MarketplaceService', () => {
     };
 
     it('should fetch and parse remote skills', async () => {
-      mockClone(service, {
+      mockRepo(service, {
         'my-skill/SKILL.md': '---\nname: My Skill\ndescription: A test skill\nauthor: tester\n---\n\n# My Skill\n\nContent here.',
         'README.md': '# Readme',
       });
@@ -793,7 +796,7 @@ describe('MarketplaceService', () => {
     });
 
     it('should use cache on second call', async () => {
-      const spy = mockClone(service, {
+      const spy = mockRepo(service, {
         'a/SKILL.md': '---\nname: A\ndescription: a\n---\nBody',
       });
 
@@ -808,7 +811,7 @@ describe('MarketplaceService', () => {
     });
 
     it('should bypass cache when force=true', async () => {
-      const spy = mockClone(service, {
+      const spy = mockRepo(service, {
         'b/SKILL.md': '---\nname: B\ndescription: b\n---\nBody',
       });
 
@@ -825,7 +828,7 @@ describe('MarketplaceService', () => {
         path: 'sub',
       };
 
-      mockClone(service, {
+      mockRepo(service, {
         'sub/inside/SKILL.md': '---\nname: Inside\ndescription: in\n---\nBody',
         'outside/SKILL.md': '---\nname: Outside\ndescription: out\n---\nBody',
       });
@@ -836,7 +839,7 @@ describe('MarketplaceService', () => {
     });
 
     it('should handle repo with no SKILL.md files', async () => {
-      mockClone(service, {
+      mockRepo(service, {
         'README.md': '# No skills here',
       });
 
@@ -845,17 +848,17 @@ describe('MarketplaceService', () => {
     });
 
     it('should handle empty repo', async () => {
-      mockClone(service, {});
+      mockRepo(service, {});
 
       const skills = await service.fetchSource(testSource);
       expect(skills).toHaveLength(0);
     });
 
-    it('should reject when clone fails', async () => {
-      vi.spyOn(service as any, '_cloneAndReadFiles')
-        .mockRejectedValue(new Error('git clone failed: repository not found'));
+    it('should reject when the tree fetch fails', async () => {
+      vi.spyOn(service as any, '_fetchRepoTree')
+        .mockRejectedValue(new Error('HTTP 404 for tree: repository not found'));
 
-      await expect(service.fetchSource(testSource)).rejects.toThrow('git clone failed');
+      await expect(service.fetchSource(testSource)).rejects.toThrow('HTTP 404');
     });
 
     it('should auto-resolve default branch when source.branch is empty', async () => {
@@ -863,19 +866,19 @@ describe('MarketplaceService', () => {
         ...testSource,
         branch: '',
       };
-      const spy = mockClone(service, {
+      const spy = mockRepo(service, {
         'my-skill/SKILL.md': '---\nname: My Skill\ndescription: desc\n---\n# Content',
       });
 
       const skills = await service.fetchSource(noBranchSource);
       expect(skills).toHaveLength(1);
-      // _cloneAndReadFiles is called with source that has empty branch
-      // and the implementation does NOT pass --branch to git clone
+      // _fetchRepoTree receives the empty-branch source and resolves the
+      // default branch internally via the GitHub API.
       expect(spy).toHaveBeenCalledWith(noBranchSource, undefined);
     });
 
     it('should return untitled when metadata has no name field', async () => {
-      mockClone(service, {
+      mockRepo(service, {
         'my-cool-tool/SKILL.md': '---\ndescription: no name\n---\nBody',
       });
 
@@ -885,8 +888,8 @@ describe('MarketplaceService', () => {
       expect(skills[0].id).toBe('testorg--skills--my-cool-tool');
     });
 
-    it('should populate additionalFiles with content for sibling files', async () => {
-      mockClone(service, {
+    it('should reference sibling files lazily by download URL', async () => {
+      mockRepo(service, {
         'my-skill/SKILL.md': '---\nname: My Skill\ndescription: desc\n---\nContent',
         'my-skill/reference.md': '# Reference\n\nDocs here',
         'my-skill/scripts/helper.sh': '#!/bin/bash\necho hello',
@@ -901,12 +904,16 @@ describe('MarketplaceService', () => {
       expect(paths).toContain('reference.md');
       expect(paths).toContain('scripts/helper.sh');
 
+      // Sibling content is NOT eagerly fetched; only a raw download URL is kept.
       const ref = skills[0].additionalFiles!.find((f) => f.relativePath === 'reference.md')!;
-      expect(ref.content).toBe('# Reference\n\nDocs here');
+      expect(ref.content).toBeUndefined();
+      expect(ref.downloadUrl).toBe(
+        'https://raw.githubusercontent.com/testorg/skills/main/my-skill/reference.md'
+      );
     });
 
     it('should set additionalFiles to undefined when there are no siblings', async () => {
-      mockClone(service, {
+      mockRepo(service, {
         'solo-skill/SKILL.md': '---\nname: Solo\ndescription: alone\n---\nBody',
         'README.md': '# Root',
       });
@@ -926,13 +933,13 @@ describe('MarketplaceService', () => {
         branch: 'main', path: '', label: 'Org B', isBuiltin: false,
       };
 
-      mockClone(service, {
+      mockRepo(service, {
         'code-review/SKILL.md': '---\nname: Code Review\ndescription: from A\n---\nBody A',
       });
       const skillsA = await service.fetchSource(sourceA);
 
       service.clearCache();
-      mockClone(service, {
+      mockRepo(service, {
         'code-review/SKILL.md': '---\nname: Code Review\ndescription: from B\n---\nBody B',
       });
       const skillsB = await service.fetchSource(sourceB);
@@ -951,7 +958,7 @@ describe('MarketplaceService', () => {
         path: 'sub',
       };
 
-      mockClone(service, {
+      mockRepo(service, {
         'sub/inside/SKILL.md': '---\nname: Inside\ndescription: in\n---\nBody',
       });
 
@@ -990,8 +997,8 @@ describe('MarketplaceService', () => {
       expect(skillB!.metadata.description).toBe('from B');
     });
 
-    it('should handle clone error', async () => {
-      vi.spyOn(service as any, '_cloneAndReadFiles')
+    it('should handle network error', async () => {
+      vi.spyOn(service as any, '_fetchRepoTree')
         .mockRejectedValue(new Error('ECONNREFUSED'));
 
       await expect(service.fetchSource(testSource)).rejects.toThrow('ECONNREFUSED');
@@ -1001,7 +1008,7 @@ describe('MarketplaceService', () => {
   describe('fetchAll', () => {
 
     it('should aggregate skills from all sources', async () => {
-      mockClone(service, {
+      mockRepo(service, {
         'alpha/SKILL.md': '---\nname: Alpha\ndescription: a\n---\nBody',
       });
 
@@ -1011,14 +1018,14 @@ describe('MarketplaceService', () => {
     });
 
     it('should throw when all sources fail', async () => {
-      vi.spyOn(service as any, '_cloneAndReadFiles')
-        .mockRejectedValue(new Error('clone failed'));
+      vi.spyOn(service as any, '_fetchRepoTree')
+        .mockRejectedValue(new Error('tree fetch failed'));
 
       await expect(service.fetchAll()).rejects.toThrow(/failed to load/i);
     });
 
     it('should force refresh all sources', async () => {
-      mockClone(service, {
+      mockRepo(service, {
         'a/SKILL.md': '---\nname: A\ndescription: a\n---\nBody',
       });
 

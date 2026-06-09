@@ -46,7 +46,8 @@ Full CRUD operations: create, view, edit, delete, duplicate, and search.
 
 Browse and install agent skills from GitHub repositories:
 
-- **Built-in sources**: Anthropic Skills, OpenAI Skills, GitHub Awesome Copilot Skills, Hugging Face Skills, Vercel Agent Skills
+- **Built-in sources**: Anthropic Skills, OpenAI Skills, GitHub Awesome Copilot Skills, Hugging Face Skills, Vercel Agent Skills, OpenClaw Agent Skills
+- **Fast loading**: Sources are loaded via the GitHub trees API — only the `SKILL.md` files you need are downloaded, with bundled files fetched lazily on install (no full repo clones, no local `git` required)
 - **skills.sh ecosystem search**: Search the entire [skills.sh](https://skills.sh) registry (the same backend used by `npx skills`) directly from the marketplace. Discover thousands of community skills and install them to your library with one click.
 - **Custom sources**: Add any GitHub repo URL as a skill source
 - **In-panel preview**: Click a skill to see its full rendered content
@@ -83,6 +84,8 @@ Import skills from your library into the current workspace. Choose the target fo
 | Droid | `.factory/skills/` | Factory AI / Droid |
 | Kode | `.kode/skills/` | Kode |
 | OpenHands | `.openhands/skills/` | OpenHands |
+| OpenClaw | `.agents/skills/` | OpenClaw |
+| Hermes | `.hermes/skills/` | Hermes Agent (Nous Research) |
 | Universal | `.agents/skills/` | Shared directory for multiple agents |
 
 Multi-select import supported. Save repo skills back to your library.

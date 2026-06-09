@@ -5,6 +5,22 @@ All notable changes to the Skill Dock extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-06-09
+
+### Fixed
+
+- **Marketplace loading is dramatically faster**: Replaced the `git clone --depth 1` approach (which downloaded each source repo in full — tens of megabytes for large sources such as `github/awesome-copilot`) with the GitHub **trees API**. SkillDock now fetches the recursive file tree in a single request and downloads only the `SKILL.md` files it actually needs. Sibling files (references, scripts, templates) are referenced lazily by raw download URL and fetched on install rather than eagerly during browsing. This also removes the dependency on a local `git` binary entirely.
+
+### Added
+
+- **OpenClaw support**: New `openclaw` import target (`.agents/skills`) and a built-in **OpenClaw Agent Skills** marketplace source (`openclaw/agent-skills`), with a dedicated brand icon in the Marketplace.
+- **Hermes Agent support**: New `hermes` import target (`.hermes/skills`) for [Hermes Agent](https://hermes-agent.nousresearch.com/) by Nous Research.
+- Built-in marketplace sources expanded from 5 to 6.
+
+### Changed
+
+- The repo-skills file watcher glob is now derived directly from `ALL_SKILL_DIRS`, so newly added targets (such as `.hermes/skills`) are picked up automatically.
+
 ## [0.8.3] - 2026-03-11
 
 ### Changed

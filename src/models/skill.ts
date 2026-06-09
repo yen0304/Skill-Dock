@@ -59,6 +59,8 @@ export type TargetFormat =
   | 'droid'
   | 'kode'
   | 'openhands'
+  | 'openclaw'
+  | 'hermes'
   | 'universal';
 
 export interface TargetFormatConfig {
@@ -172,6 +174,15 @@ export const BUILTIN_MARKETPLACE_SOURCES: MarketplaceSource[] = [
     branch: 'main',
     path: '',
     label: 'Vercel Agent Skills',
+    isBuiltin: true,
+  },
+  {
+    id: 'openclaw/agent-skills',
+    owner: 'openclaw',
+    repo: 'agent-skills',
+    branch: 'main',
+    path: 'skills',
+    label: 'OpenClaw Agent Skills',
     isBuiltin: true,
   },
 ];
@@ -315,6 +326,20 @@ export const TARGET_FORMATS: Record<TargetFormat, TargetFormatConfig> = {
     label: 'OpenHands (.openhands/skills)',
     description: 'OpenHands skill format',
     skillsDir: '.openhands/skills',
+    usesSkillMd: true,
+  },
+  openclaw: {
+    id: 'openclaw',
+    label: 'OpenClaw (.agents/skills)',
+    description: 'OpenClaw personal AI assistant skills',
+    skillsDir: '.agents/skills',
+    usesSkillMd: true,
+  },
+  hermes: {
+    id: 'hermes',
+    label: 'Hermes (.hermes/skills)',
+    description: 'Hermes Agent (Nous Research) skill format',
+    skillsDir: '.hermes/skills',
     usesSkillMd: true,
   },
   universal: {

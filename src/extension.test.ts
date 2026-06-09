@@ -27,6 +27,7 @@ vi.mock('vscode', async () => {
 import { activate, deactivate } from './extension';
 import { SkillTreeItem } from './providers/skillLibraryProvider';
 import { MarketplaceSourceItem } from './providers/marketplaceTreeProvider';
+import { ALL_SKILL_DIRS } from './models/skill';
 
 describe('extension', () => {
   let tmpDir: string;
@@ -99,7 +100,7 @@ describe('extension', () => {
       activate(mockContext);
 
       expect(workspace.createFileSystemWatcher).toHaveBeenCalledWith(
-        '**/{.claude/skills,.agents/skills,.github/skills,.windsurf/skills,.roo/skills,.continue/skills,.augment/skills,.goose/skills,.gemini/skills,.kilocode/skills,.junie/skills,.trae/skills,.factory/skills,.kode/skills,.openhands/skills}/**/SKILL.md'
+        `**/{${ALL_SKILL_DIRS.join(',')}}/**/SKILL.md`
       );
     });
 
